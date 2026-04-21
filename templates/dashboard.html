@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SalamaIQ — Tableau de bord analytique SMC Salama">
+    <title>SalamaIQ · {{ filename }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        salama: { 400: '#ff6b4a', 500: '#e8321a', 600: '#c42810' },
+                        surface: '#111827', dark: '#070c18'
+                    },
+                    fontFamily: { inter: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        *, *::before, *::after { font-family: 'Inter', sans-serif; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { background: #060b16; color: #e2e8f0; min-height: 100vh; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #e8321a; }
+
+        /* Background grid */
+        body::before {
+            content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+            background-size: 48px 48px;
+        }
+
+        /* Layout */
+        .app-layout { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+
+        /* Sidebar */
+        .sidebar {
+            width: 220px; flex-shrink: 0;
+            background: rgba(10,15,26,0.98);
+            border-right: 1px solid rgba(255,255,255,0.05);
+            display: flex; flex-direction: column;
+            position: sticky; top: 0; height: 100vh;
+        }
+        .sidebar-brand {
+            padding: 20px 18px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .sidebar-logo-text {
+            font-size: 22px; font-weight: 900; color: white; letter-spacing: -0.5px;
+        }
+        .sidebar-logo-text span { color: #e8321a; }
+        .sidebar-sub { font-size: 10px; color: #4b5563; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+        .nav-section { padding: 8px 12px; margin-top: 4px; }
+        .nav-label { font-size: 9px; font-weight: 700; color: #374151; letter-spacing: 0.12em; text-transform: uppercase; padding: 0 6px; margin-bottom: 4px; }
+        .nav-item {
+            display: flex; align-items: center; gap: 9px;
+            padding: 8px 10px; border-radius: 10px; cursor: pointer;
+            color: #6b7280; font-size: 12.5px; font-weight: 500;
+            transition: all 0.15s; text-decoration: none; margin-bottom: 1px;
+        }
+        .nav-item:hover { background: rgba(255,255,255,0.04); color: #d1d5db; }
+        .nav-item.active { background: rgba(232,50,26,0.12); color: #e8321a; font-weight: 600; }
+        .nav-item .nav-icon { width: 18px; text-align: center; font-size: 14px; }
+        .sidebar-footer {
+            margin-top: auto; padding: 14px 16px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            font-size: 10px; color: #374151;
+        }
+
+        /* Main content */
+        .main-content { flex: 1; overflow-x: hidden; }
+
+        /* Top bar */
+        .topbar {
+            position: sticky; top: 0; z-index: 50;
+            background: rgba(6,11,22,0.97); backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding: 10px 24px; display: flex; align-items: center; gap: 12px;
+        }
+        .topbar-file { font-size: 12px; color: #6b7280; font-family: monospace; }
+        .topbar-badge { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
+        .badge-ai { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+        .badge-live { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.2); display: flex; align-items: center; gap: 4px; }
+        .dot-live { width: 5px; height: 5px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
+
+        /* Diagnostic */
+        .diagnostic-bar {
+            margin: 16px 24px 0;
+            background: linear-gradient(135deg, rgba(232,50,26,0.07), rgba(17,24,39,0.9));
+            border: 1px solid rgba(232,50,26,0.18);
+            border-radius: 14px; padding: 14px 18px;
+        }
+        .diagnostic-title { font-size: 11px; font-weight: 700; color: #e8321a; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        .diagnostic-text { font-size: 12.5px; color: #9ca3af; line-height: 1.7; }
+
+        /* Filter bar */
+        .filter-bar {
+            margin: 14px 24px 0;
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            background: rgba(17,24,39,0.6); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px; padding: 10px 14px;
+        }
+        .filter-label { font-size: 10px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+        .filter-select, .filter-date {
+            background: rgba(26,36,54,0.9); border: 1px solid rgba(255,255,255,0.08);
+            color: #d1d5db; border-radius: 8px; padding: 5px 10px;
+            font-size: 12px; outline: none; cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .filter-select:focus, .filter-date:focus { border-color: rgba(232,50,26,0.4); }
+        .toggle-row { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+        .toggle-label { font-size: 11px; color: #6b7280; }
+        .toggle-track {
+            width: 38px; height: 20px; border-radius: 10px;
+            background: rgba(255,255,255,0.08); position: relative;
+            cursor: pointer; transition: background 0.25s;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .toggle-track.on { background: rgba(232,50,26,0.7); border-color: rgba(232,50,26,0.3); }
+        .toggle-knob {
+            position: absolute; width: 14px; height: 14px;
+            background: white; border-radius: 50%;
+            top: 2px; left: 2px; transition: left 0.25s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+        .toggle-track.on .toggle-knob { left: 20px; }
+
+        /* Cards grid */
+        .cards-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 14px 24px 0; }
+        @media (max-width: 1100px) { .cards-grid { grid-template-columns: repeat(2, 1fr); } }
+
+        .kpi-card {
+            background: rgba(17,24,39,0.92);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 14px; padding: 16px 18px;
+            transition: all 0.2s; position: relative; overflow: hidden;
+        }
+        .kpi-card::after {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: var(--kpi-color, #e8321a); opacity: 0.5;
+        }
+        .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 40px rgba(0,0,0,0.35); border-color: rgba(255,255,255,0.1); }
+        .kpi-icon { font-size: 22px; margin-bottom: 10px; }
+        .kpi-value { font-size: 24px; font-weight: 800; color: white; letter-spacing: -0.5px; line-height: 1; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+        .kpi-unit { font-size: 10px; color: #4b5563; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+        .kpi-label { font-size: 11.5px; color: #6b7280; margin-top: 6px; }
+        .kpi-n1 { font-size: 10px; color: #374151; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.04); }
+        .delta { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; float: right; }
+        .delta-up { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
+        .delta-dn { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+        .delta-eq { background: rgba(107,114,128,0.1); color: #6b7280; border: 1px solid rgba(107,114,128,0.2); }
+
+        /* Chart cards */
+        .charts-section { padding: 14px 24px 0; }
+        .chart-row { display: grid; gap: 14px; margin-bottom: 14px; }
+        .chart-row-2 { grid-template-columns: 2fr 1fr; }
+        .chart-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .chart-row-1 { grid-template-columns: 1fr; }
+        @media (max-width: 1100px) { .chart-row-2, .chart-row-3 { grid-template-columns: 1fr; } }
+
+        .chart-card {
+            background: rgba(17,24,39,0.92);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 14px; padding: 18px 18px 10px;
+            transition: border-color 0.2s;
+        }
+        .chart-card:hover { border-color: rgba(255,255,255,0.1); }
+        .chart-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+        .chart-title { font-size: 13px; font-weight: 700; color: #f1f5f9; }
+        .chart-subtitle { font-size: 11px; color: #4b5563; margin-top: 2px; }
+        .chart-tabs { display: flex; gap: 2px; }
+        .ctab {
+            font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 7px;
+            cursor: pointer; color: #6b7280; transition: all 0.15s;
+        }
+        .ctab.act { background: rgba(232,50,26,0.15); color: #e8321a; }
+        .ctab:hover { color: #c4cad6; }
+
+        /* Stats row inside charts */
+        .stat-pills { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        .stat-pill { background: rgba(26,36,54,0.8); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 5px 12px; font-size: 11px; color: #9ca3af; }
+        .stat-pill strong { color: #f1f5f9; }
+
+        /* Chat */
+        .chat-panel {
+            position: fixed; bottom: 20px; right: 20px; z-index: 200;
+            width: 360px; border-radius: 18px;
+            background: rgba(10,15,26,0.99);
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 20px 70px rgba(0,0,0,0.7);
+            transition: transform 0.35s cubic-bezier(.34,1.56,.64,1);
+        }
+        .chat-panel.closed { transform: translateY(calc(100% - 58px)); }
+        .chat-head {
+            background: linear-gradient(135deg, #c42810, #e8321a);
+            border-radius: 18px 18px 0 0; padding: 14px 18px;
+            display: flex; align-items: center; justify-content: space-between;
+            cursor: pointer;
+        }
+        .chat-head-left { display: flex; align-items: center; gap: 10px; }
+        .chat-avatar { width: 32px; height: 32px; background: rgba(255,255,255,0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+        .chat-head-title { font-size: 13px; font-weight: 700; color: white; }
+        .chat-head-sub { font-size: 10px; color: rgba(255,200,190,0.9); }
+        .chat-chevron { font-size: 18px; color: white; transition: transform 0.3s; }
+        .chat-panel.closed .chat-chevron { transform: rotate(180deg); }
+        .chat-body { height: 280px; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+        .chat-body::-webkit-scrollbar { width: 4px; }
+        .chat-body::-webkit-scrollbar-thumb { background: #1f2937; }
+        .msg-ai { background: rgba(26,36,54,0.9); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px 12px 12px 3px; padding: 9px 13px; font-size: 12.5px; color: #c4cad6; line-height: 1.55; max-width: 95%; align-self: flex-start; }
+        .msg-user { background: rgba(232,50,26,0.18); border: 1px solid rgba(232,50,26,0.22); border-radius: 12px 12px 3px 12px; padding: 9px 13px; font-size: 12.5px; color: #f1f5f9; line-height: 1.55; max-width: 95%; align-self: flex-end; }
+        .msg-typing { display: flex; gap: 4px; padding: 12px 13px; align-self: flex-start; }
+        .msg-typing span { width: 5px; height: 5px; background: #6b7280; border-radius: 50%; animation: blink 1.2s infinite; }
+        .msg-typing span:nth-child(2) { animation-delay: 0.2s; }
+        .msg-typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%,60%,100%{opacity:.3;transform:scale(1)} 30%{opacity:1;transform:scale(1.3)} }
+        .chat-suggestions { display: flex; flex-wrap: wrap; gap: 6px; }
+        .sug-btn { background: rgba(26,36,54,0.7); border: 1px solid rgba(255,255,255,0.07); color: #9ca3af; border-radius: 8px; padding: 5px 10px; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+        .sug-btn:hover { background: rgba(232,50,26,0.15); border-color: rgba(232,50,26,0.25); color: #f1f5f9; }
+        .chat-foot { padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; gap: 8px; }
+        .chat-inp { flex: 1; background: rgba(26,36,54,0.9); border: 1px solid rgba(255,255,255,0.08); color: white; border-radius: 10px; padding: 7px 12px; font-size: 12.5px; outline: none; transition: border-color 0.2s; }
+        .chat-inp:focus { border-color: rgba(232,50,26,0.4); }
+        .chat-send { background: linear-gradient(135deg, #e8321a, #c42810); border: none; border-radius: 10px; padding: 7px 14px; color: white; font-size: 12px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; }
+        .chat-send:hover { opacity: 0.88; }
+
+        /* Footer */
+        .page-footer { margin: 20px 24px; padding: 12px 18px; background: rgba(17,24,39,0.6); border: 1px solid rgba(255,255,255,0.04); border-radius: 12px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+        .foot-item { font-size: 11px; color: #374151; }
+        .foot-item span { color: #6b7280; }
+
+        /* Animations */
+        .fade-in { animation: fadeIn 0.5s ease forwards; opacity: 0; }
+        @keyframes fadeIn { to { opacity: 1; } }
+        .slide-up { animation: slideUp 0.5s ease forwards; opacity: 0; transform: translateY(16px); }
+        @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
+        .d1 { animation-delay: .05s; } .d2 { animation-delay: .1s; }
+        .d3 { animation-delay: .15s; } .d4 { animation-delay: .2s; }
+        .d5 { animation-delay: .25s; } .d6 { animation-delay: .3s; }
+    </style>
+</head>
+<body class="dark">
+<div class="app-layout">
+
+    <!-- ══════════════ SIDEBAR ══════════════ -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo-text">Salama<span>IQ</span></div>
+            <div class="sidebar-sub">Analytics Platform</div>
+        </div>
+
+        <div class="nav-section">
+            <div class="nav-label">Tableaux de bord</div>
+            <a href="#kpi-section" class="nav-item active"><span class="nav-icon">📊</span>Vue d'ensemble</a>
+            <a href="#chart-evolution" class="nav-item"><span class="nav-icon">📈</span>Évolution</a>
+            <a href="#chart-cumul" class="nav-item"><span class="nav-icon">📉</span>Progression</a>
+            <a href="#chart-mix" class="nav-item"><span class="nav-icon">🔵</span>Mix Produits</a>
+            <a href="#chart-clients" class="nav-item"><span class="nav-icon">👥</span>Clients</a>
+            <a href="#chart-bubble" class="nav-item"><span class="nav-icon">🔬</span>Analyse Clients</a>
+            <a href="#chart-heatmap" class="nav-item"><span class="nav-icon">🌡️</span>Heatmap</a>
+            <a href="#chart-bridge" class="nav-item"><span class="nav-icon">🏗️</span>Bridge Marge</a>
+        </div>
+
+        <div class="nav-section">
+            <div class="nav-label">Actions</div>
+            <a href="#" onclick="openUploadModal()" class="nav-item" style="background:rgba(232,50,26,0.1);border:1px solid rgba(232,50,26,0.3);border-radius:8px;margin-bottom:4px;"><span class="nav-icon">➕</span>Importer des fichiers</a>
+            <a href="#" onclick="openBddManager()" class="nav-item"><span class="nav-icon">🗄️</span>Gestionnaire BDD</a>
+            <a href="#" onclick="openTransactionsModal()" class="nav-item"><span class="nav-icon">🔎</span>Drill-Down (Grille)</a>
+            <a href="#" onclick="exportPDF()" class="nav-item text-salama-400 font-medium"><span class="nav-icon">📄</span>Exporter PDF</a>
+        </div>
+
+        <div class="sidebar-footer">
+            SalamaIQ v1.0 · SMC Salama<br>
+            {{ nb_rows }} transactions · {{ mapping_source }}
+        </div>
+    </aside>
+
+    <!-- ══════════════ MAIN CONTENT ══════════════ -->
+    <div class="main-content">
+
+        <!-- ► Empty State Overlay (si BDD vide) -->
+        {% if db_empty %}
+        <div id="empty-state" style="position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(7,12,24,0.97);backdrop-filter:blur(6px);">
+            <div style="font-size:64px;margin-bottom:24px;">📊</div>
+            <h2 style="font-size:28px;font-weight:800;color:white;margin-bottom:8px;">Aucune donnée chargée</h2>
+            <p style="color:#6b7280;font-size:15px;margin-bottom:32px;text-align:center;max-width:400px;">Déposez vos premiers fichiers Excel pour initialiser votre tableau de bord analytique.</p>
+            <button onclick="openUploadModal()" style="background:linear-gradient(135deg,#e8321a,#c42810);color:white;font-weight:700;font-size:15px;padding:14px 40px;border-radius:16px;border:none;cursor:pointer;display:flex;align-items:center;gap:10px;">
+                <span>🚀</span> Importer mes premiers fichiers
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- Top bar -->
+        <div class="topbar fade-in">
+            <div style="font-size:15px;font-weight:800;color:white;">Salama<span style="color:#e8321a">IQ</span></div>
+            <div style="width:1px;height:18px;background:rgba(255,255,255,0.08)"></div>
+            <div class="topbar-file">{{ filename }}</div>
+            <span class="topbar-badge badge-ai">{{ mapping_source }}</span>
+            <span class="topbar-badge badge-live"><div class="dot-live"></div>Actif</span>
+            <div style="margin-left:auto;font-size:11px;color:#374151;">
+                {{ kpis.date_debut }} → {{ kpis.date_fin }}
+            </div>
+        </div>
+
+        <!-- Red Flags -->
+        {% if red_flags %}
+        <div class="diagnostic-bar slide-up" style="margin-bottom: -6px; border-color: rgba(239, 68, 68, 0.3); background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(17,24,39,0.9));">
+            <div class="diagnostic-title" style="color: #ef4444; font-size: 11px;">🚨 Qualité des Données (Red Flags)</div>
+            <div class="diagnostic-text" style="color: #fca5a5; font-size: 12px; font-weight: 500;">
+                <ul style="list-style-type: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px;">
+                    {% for flag in red_flags %}
+                    <li>{{ flag }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Diagnostic IA -->
+        <div class="diagnostic-bar slide-up d1">
+            <div class="diagnostic-title">⚡ Diagnostic IA — Qwen 3.5 (NVIDIA NIM)</div>
+            <div class="diagnostic-text">{{ diagnostic | safe }}</div>
+        </div>
+
+        <!-- Filter bar -->
+        <div class="filter-bar slide-up d2" id="filter-bar">
+            <span class="filter-label">Filtres</span>
+            <input type="date" id="f-date-from" class="filter-date" onchange="applyFilters()">
+            <input type="date" id="f-date-to" class="filter-date" onchange="applyFilters()">
+            <select id="f-fournisseur" class="filter-select" onchange="applyFilters()">
+                <option value="">Tous fournisseurs</option>
+            </select>
+            <select id="f-client" class="filter-select" onchange="applyFilters()">
+                <option value="">Tous clients</option>
+            </select>
+            <div class="toggle-row">
+                <span class="toggle-label">N vs N-1</span>
+                <div class="toggle-track on" id="compare-toggle" onclick="toggleCompare()">
+                    <div class="toggle-knob"></div>
+                </div>
+            </div>
+            <button onclick="resetFilters()" style="font-size:11px;color:#6b7280;cursor:pointer;margin-left:4px;transition:color .2s;" onmouseover="this.style.color='#e8321a'" onmouseout="this.style.color='#6b7280'">↺ Reset</button>
+        </div>
+
+        <!-- ── KPI Cards ───────────────────────────────────────────────────── -->
+        <div class="cards-grid" id="kpi-section">
+            {% macro kpi(id, icon, value, unit, label, n1, variation, color) %}
+            <div class="kpi-card slide-up" style="--kpi-color:{{ color }}">
+                <div class="kpi-icon">{{ icon }}</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div>
+                        <div class="kpi-value" id="{{ id }}">{{ "{:,.0f}".format(value) }}</div>
+                        <div class="kpi-unit">{{ unit }}</div>
+                    </div>
+                    {% if variation is not none %}
+                        {% if variation > 0 %}<span class="delta delta-up">▲ +{{ "%.1f"|format(variation) }}%</span>
+                        {% elif variation < 0 %}<span class="delta delta-dn">▼ {{ "%.1f"|format(variation) }}%</span>
+                        {% else %}<span class="delta delta-eq">→ 0%</span>{% endif %}
+                    {% endif %}
+                </div>
+                <div class="kpi-label">{{ label }}</div>
+                {% if n1 > 0 %}
+                <div class="kpi-n1">N-1 : {{ "{:,.0f}".format(n1) }} {{ unit }}</div>
+                {% endif %}
+            </div>
+            {% endmacro %}
+
+            {{ kpi('kpi-ca',     '💰', kpis.ca_total,     'MAD', 'Chiffre d\'Affaires', kpis.ca_total_n1,    kpis.ca_variation,          '#e8321a') }}
+            {{ kpi('kpi-go',     '⛽', kpis.volume_gasoil, 'L',   'Volume Gasoil',       kpis.volume_gasoil_n1, kpis.vol_gasoil_variation, '#3b82f6') }}
+            {{ kpi('kpi-sp',     '🔶', kpis.volume_super,  'L',   'Volume Super SP',     kpis.volume_super_n1,  kpis.vol_super_variation,  '#f59e0b') }}
+            {{ kpi('kpi-marge',  '📈', kpis.marge_ht,      'MAD', 'Marge HT (' ~ "%.1f"|format(kpis.taux_marge) ~ '%)', kpis.marge_ht_n1, kpis.marge_variation, '#10b981') }}
+        </div>
+
+        <!-- ── Charts Section ─────────────────────────────────────────────── -->
+        <div class="charts-section">
+
+            <!-- Row 1 : Évolution + Donut Mix Produits -->
+            <div class="chart-row chart-row-2" id="chart-evolution">
+                <div class="chart-card slide-up d3">
+                    <div class="chart-header">
+                        <div>
+                            <div class="chart-title">Évolution Mensuelle</div>
+                            <div class="chart-subtitle">N (<span id="yr-n">{{ kpis.current_year }}</span>) vs N-1 (<span id="yr-n1">{{ kpis.previous_year }}</span>)</div>
+                        </div>
+                        <div class="chart-tabs">
+                            <div class="ctab act" onclick="switchMetric('ca',this)" id="tab-ca">CA</div>
+                            <div class="ctab" onclick="switchMetric('gasoil',this)">Gasoil</div>
+                            <div class="ctab" onclick="switchMetric('super',this)">Super</div>
+                            <div class="ctab" onclick="switchMetric('marge',this)">Marge</div>
+                        </div>
+                    </div>
+                    <div id="apex-evolution" style="min-height:290px"></div>
+                </div>
+
+                <div class="chart-card slide-up d4" id="chart-mix">
+                    <div class="chart-header">
+                        <div>
+                            <div class="chart-title">Mix Produits</div>
+                            <div class="chart-subtitle">Répartition volumes</div>
+                        </div>
+                    </div>
+                    <div class="stat-pills">
+                        <div class="stat-pill">Total : <strong id="mix-total">–</strong> L</div>
+                    </div>
+                    <div id="apex-donut" style="min-height:250px"></div>
+                </div>
+            </div>
+
+            <!-- Row 2 : Cumulatif + Bridge Marge -->
+            <div class="chart-row chart-row-2" id="chart-cumul">
+                <div class="chart-card slide-up d3">
+                    <div class="chart-header">
+                        <div>
+                            <div class="chart-title">Progression Cumulée</div>
+                            <div class="chart-subtitle">CA cumulé mois par mois N vs N-1</div>
+                        </div>
+                        <div class="chart-tabs">
+                            <div class="ctab act" onclick="switchCumul('ca',this)">CA</div>
+                            <div class="ctab" onclick="switchCumul('marge',this)">Marge</div>
+                        </div>
+                    </div>
+                    <div id="apex-cumul" style="min-height:270px"></div>
+                </div>
+
+                <div class="chart-card slide-up d4" id="chart-bridge">
+                    <div class="chart-header">
+                        <div>
+                            <div class="chart-title">Composition de la Marge</div>
+                            <div class="chart-subtitle">Par fournisseur / segment</div>
+                        </div>
+                    </div>
+                    <div id="apex-bridge" style="min-height:270px"></div>
+                </div>
+            </div>
+
+            <!-- Row 3 : Top 10 Clients (full width) -->
+            <div class="chart-row chart-row-1" id="chart-clients">
+                <div class="chart-card slide-up d3">
+                    <div class="chart-header">
+                        <div>
+                            <div class="chart-title">🏆 Top 10 Clients — Classement CA</div>
+                            <div class="chart-subtitle">{{ kpis.nb_clients }} clients au total · hover pour détails</div>
+                        </div>
+                        <div class="stat-pill" style="margin-left:auto;">{{ kpis.nb_clients }} clients</div>
+                    </div>
+                    <div id="apex-top10" style="min-height:320px"></div>
+                </div>
+            </div>
+
+            <!-- Row 4 : Bubble (Volume vs Marge) + Heatmap -->
+            <div class="chart-row chart-row-2" id="chart-bubble">
+                <div class="chart-card slide-up d3">
+                    <div class="chart-header">
+                        <div>
+                            <div class="chart-title">Matrice Clients — Volume vs Marge</div>
+                            <div class="chart-subtitle">Taille bulle = CA · Top 20 clients</div>
+                        </div>
+                    </div>
+                    <div id="apex-bubble" style="min-height:300px"></div>
+                </div>
+
+                <div class="chart-card slide-up d4" id="chart-heatmap">
+                    <div class="chart-header">
+                        <div>
+                            <div class="chart-title">Heatmap Activité</div>
+                            <div class="chart-subtitle">CA par mois et par année</div>
+                        </div>
+                    </div>
+                    <div id="apex-heatmap" style="min-height:300px"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="page-footer fade-in">
+            <span class="foot-item">📅 Période : <span>{{ kpis.date_debut }} → {{ kpis.date_fin }}</span></span>
+            <span class="foot-item">🔢 Transactions : <span>{{ nb_rows }}</span></span>
+            <span class="foot-item">👥 Clients : <span>{{ kpis.nb_clients }}</span></span>
+            <span class="foot-item">🏢 Fournisseurs : <span>{{ kpis.nb_fournisseurs }}</span></span>
+            <span class="foot-item">🧠 IA : <span>{{ mapping_source }}</span></span>
+            <span class="foot-item" style="margin-left:auto;">SalamaIQ © 2024 — SMC Salama</span>
+        </div>
+    </div><!-- end main-content -->
+</div><!-- end app-layout -->
+
+<!-- ══════════════ CHAT PANEL ══════════════ -->
+<div class="chat-panel" id="chat-panel">
+    <div class="chat-head" onclick="toggleChat()">
+        <div class="chat-head-left">
+            <div class="chat-avatar">🤖</div>
+            <div>
+                <div class="chat-head-title">Assistant Direction</div>
+                <div class="chat-head-sub">Posez vos questions sur les données</div>
+            </div>
+        </div>
+        <div class="chat-chevron" id="chat-chev">∨</div>
+    </div>
+    <div class="chat-body" id="chat-body">
+        <div class="msg-ai">Bonjour, je suis prêt à répondre à vos questions sur les données chargées.</div>
+        <div class="chat-suggestions" id="chat-sugs">
+            <button class="sug-btn" onclick="askQ('Qui sont les 3 meilleurs clients en CA ?')">🏆 Top 3 clients</button>
+            <button class="sug-btn" onclick="askQ('Analyse l\'évolution de la marge HT')">📊 Analyse marge</button>
+            <button class="sug-btn" onclick="askQ('Répartition Gasoil vs Super SP en volume ?')">⛽ Mix produits</button>
+        </div>
+    </div>
+    <div class="chat-foot">
+        <input type="text" id="chat-inp" class="chat-inp" placeholder="Votre question..."
+               onkeydown="if(event.key==='Enter') sendMsg()">
+        <button class="chat-send" onclick="sendMsg()">→</button>
+    </div>
+</div>
+
+<!-- ══════════════ DATA INJECTION ══════════════ -->
+<script>
+    const SID       = "{{ session_id }}";
+    const MD        = {{ monthly_series  | safe }};   // monthly data
+    const TOP10     = {{ top10_clients   | safe }};
+    const BRIDGE    = {{ margin_bridge   | safe }};
+    const PMIX      = {{ product_mix     | safe }};
+    const CUMUL     = {{ cumulative      | safe }};
+    const BUBBLE    = {{ client_bubble   | safe }};
+    const HEATMAP   = {{ heatmap         | safe }};
+    const FILTERS   = {{ filters_data    | safe }};
+    const KPIS      = {{ kpis | tojson  | safe }};
+
+    // ── Global chart refs ───────────────────────────────────────────────────
+    let chEvolution = null, chDonut = null, chCumul = null,
+        chBridge = null, chTop10 = null, chBubble = null, chHeatmap = null;
+    let compareOn = true;
+    let curMetric = 'ca';
+    let curCumul = 'ca';
+    let chatOpen = true;
+
+    // ── Shared theme ────────────────────────────────────────────────────────
+    const T = {
+        bg: 'transparent', fg: '#6b7280',
+        grid: { borderColor: 'rgba(255,255,255,0.04)', strokeDashArray: 3 },
+        tooltip: { theme: 'dark', style: { fontSize: '12px', fontFamily: 'Inter,sans-serif' } },
+        label: { style: { colors: '#6b7280', fontSize: '11px', fontFamily: 'Inter,sans-serif' } }
+    };
+    const fmt = v => {
+        if (Math.abs(v) >= 1e6) return `${(v/1e6).toFixed(2)}M`;
+        if (Math.abs(v) >= 1e3) return `${(v/1e3).toFixed(0)}K`;
+        return v.toFixed(0);
+    };
+    const fmtFR = v => (v||0).toLocaleString('fr-FR', { maximumFractionDigits: 0 });
+
+    // ── Chart 1 : Evolution ──────────────────────────────────────────────────
+    const metricMap = {
+        ca:     { n: ()=>MD.ca_n,         n1: ()=>MD.ca_n1,         forecast: ()=>MD.ca_forecast, lbl:'CA',       unit:'MAD' },
+        gasoil: { n: ()=>MD.vol_gasoil_n, n1: ()=>MD.vol_gasoil_n1, forecast: ()=>null, lbl:'Gasoil',   unit:'L'   },
+        super:  { n: ()=>MD.vol_super_n,  n1: ()=>MD.vol_super_n1,  forecast: ()=>null, lbl:'Super SP', unit:'L'   },
+        marge:  { n: ()=>MD.marge_n,      n1: ()=>MD.marge_n1,      forecast: ()=>null, lbl:'Marge HT', unit:'MAD' },
+    };
+
+    function buildEvol(metric) {
+        const m = metricMap[metric];
+        const yrN  = MD.current_year  || KPIS.current_year;
+        const yrN1 = MD.previous_year || KPIS.previous_year;
+        const series = [{ name: `${m.lbl} ${yrN}`, data: m.n() }];
+        if (compareOn && m.n1().some(v=>v>0))
+            series.push({ name: `${m.lbl} ${yrN1}`, data: m.n1() });
+            
+        if (m.forecast && m.forecast() && m.forecast().some(v => v !== null)) {
+            series.push({ name: 'Prévisions IA (Holt-Winters)', data: m.forecast() });
+        }
+        
+        return {
+            chart: { type:'area', height:285, background:'transparent', toolbar:{show:false}, fontFamily:'Inter,sans-serif', animations:{speed:400} },
+            colors: ['#e8321a','#3b82f6','#10b981'],
+            series,
+            xaxis: { categories: MD.labels, labels: T.label },
+            yaxis: { labels: { ...T.label, formatter: fmt } },
+            grid: T.grid,
+            tooltip: { ...T.tooltip, y: { formatter: v => `${fmtFR(v)} ${m.unit}` } },
+            fill: { type:'gradient', gradient:{ shadeIntensity:1, opacityFrom:.3, opacityTo:.01, stops:[0,90,100] } },
+            stroke: { curve:'smooth', width:[3,2,2], dashArray:[0,5,4] },
+            legend: { labels:{colors:'#9ca3af'}, markers:{radius:4} },
+            markers: { size: 0, hover: { size: 5 } }
+        };
+    }
+
+    function initEvol() {
+        if (chEvolution) chEvolution.destroy();
+        chEvolution = new ApexCharts(document.getElementById('apex-evolution'), buildEvol(curMetric));
+        chEvolution.render();
+    }
+
+    function switchMetric(m, el) {
+        curMetric = m;
+        document.querySelectorAll('#chart-evolution .ctab').forEach(t => t.classList.remove('act'));
+        el.classList.add('act');
+        if (chEvolution) chEvolution.updateOptions(buildEvol(m));
+    }
+
+    // ── Chart 2 : Donut Mix Produits ─────────────────────────────────────────
+    function initDonut() {
+        const hasData = PMIX.volumes && PMIX.volumes.some(v=>v>0);
+        if (!hasData) {
+            document.getElementById('apex-donut').innerHTML =
+                '<div style="color:#374151;font-size:12px;padding:40px;text-align:center">Données de volume insuffisantes</div>';
+            return;
+        }
+        document.getElementById('mix-total').textContent = fmtFR(PMIX.total_volume);
+        if (chDonut) chDonut.destroy();
+        chDonut = new ApexCharts(document.getElementById('apex-donut'), {
+            chart: { type:'donut', height:250, background:'transparent', fontFamily:'Inter,sans-serif' },
+            series: PMIX.volumes,
+            labels: PMIX.labels,
+            colors: ['#3b82f6','#f59e0b'],
+            dataLabels: { style:{ fontSize:'12px', fontFamily:'Inter,sans-serif', fontWeight:'700' } },
+            legend: { position:'bottom', labels:{colors:'#9ca3af'} },
+            plotOptions: { pie:{ donut:{ size:'68%', labels:{ show:true,
+                total:{ show:true, label:'Total', color:'#6b7280', fontSize:'11px', formatter: w => fmtFR(w.globals.seriesTotals.reduce((a,b)=>a+b,0))+' L' }
+            } } } },
+            tooltip: { ...T.tooltip, y:{ formatter: (v,{seriesIndex})=>`${fmtFR(v)} L (${PMIX.pct_volumes[seriesIndex]}%)` } }
+        });
+        chDonut.render();
+    }
+
+    // ── Chart 3 : Cumulatif ──────────────────────────────────────────────────
+    const cumulMap = {
+        ca:    { n: ()=>CUMUL.cumul_n,      n1: ()=>CUMUL.cumul_n1,      lbl:'CA',       unit:'MAD' },
+        marge: { n: ()=>CUMUL.cumul_marge_n, n1: ()=>CUMUL.cumul_marge_n1, lbl:'Marge HT', unit:'MAD' },
+    };
+
+    function buildCumul(key) {
+        const m = cumulMap[key];
+        const yrN  = CUMUL.current_year  || KPIS.current_year;
+        const yrN1 = CUMUL.previous_year || KPIS.previous_year;
+        const s = [{ name:`${m.lbl} cumulé ${yrN}`, data: m.n() }];
+        if (compareOn && m.n1().some(v=>v>0))
+            s.push({ name:`${m.lbl} cumulé ${yrN1}`, data: m.n1() });
+        return {
+            chart: { type:'line', height:260, background:'transparent', toolbar:{show:false}, fontFamily:'Inter,sans-serif', animations:{speed:400} },
+            colors: ['#10b981','#6366f1'],
+            series: s,
+            xaxis: { categories: CUMUL.labels, labels: T.label },
+            yaxis: { labels:{ ...T.label, formatter: fmt } },
+            grid: T.grid,
+            stroke: { curve:'stepline', width:[3,2], dashArray:[0,4] },
+            markers: { size:3, hover:{size:6} },
+            tooltip: { ...T.tooltip, y:{ formatter: v=>`${fmtFR(v)} ${m.unit}` } },
+            legend: { labels:{colors:'#9ca3af'} }
+        };
+    }
+
+    function initCumul() {
+        if (chCumul) chCumul.destroy();
+        chCumul = new ApexCharts(document.getElementById('apex-cumul'), buildCumul(curCumul));
+        chCumul.render();
+    }
+
+    function switchCumul(k, el) {
+        curCumul = k;
+        document.querySelectorAll('#chart-cumul .ctab').forEach(t => t.classList.remove('act'));
+        el.classList.add('act');
+        if (chCumul) chCumul.updateOptions(buildCumul(k));
+    }
+
+    // ── Chart 4 : Bridge Marge ───────────────────────────────────────────────
+    function initBridge() {
+        const el = document.getElementById('apex-bridge');
+        if (!BRIDGE.categories || !BRIDGE.categories.length) {
+            el.innerHTML = '<div style="color:#374151;font-size:12px;padding:40px;text-align:center">Données marge insuffisantes</div>';
+            return;
+        }
+        if (chBridge) chBridge.destroy();
+        chBridge = new ApexCharts(el, {
+            chart: { type:'bar', height:260, background:'transparent', toolbar:{show:false}, fontFamily:'Inter,sans-serif' },
+            series: [{ name:'Marge HT', data: BRIDGE.values }],
+            colors: ['#10b981'],
+            fill: { type:'gradient', gradient:{ shade:'dark', type:'vertical', shadeIntensity:.4 } },
+            xaxis: { categories: BRIDGE.categories, labels: T.label },
+            yaxis: { labels: { ...T.label, formatter: fmt } },
+            grid: T.grid,
+            tooltip: { ...T.tooltip, y:{ formatter: v=>`${fmtFR(v)} MAD` } },
+            plotOptions: { bar:{ borderRadius:6, columnWidth:'60%', distributed:true } },
+            legend: { show:false },
+            dataLabels: { enabled: BRIDGE.categories.length<=5, style:{fontSize:'10px',colors:['#d1d5db']}, formatter: fmt }
+        });
+        chBridge.render();
+    }
+
+    // ── Chart 5 : Top 10 Clients ─────────────────────────────────────────────
+    function initTop10() {
+        const el = document.getElementById('apex-top10');
+        if (!TOP10 || !TOP10.length) {
+            el.innerHTML = '<div style="color:#374151;font-size:12px;padding:40px;text-align:center">Données clients insuffisantes</div>';
+            return;
+        }
+        if (chTop10) chTop10.destroy();
+        const labels = [...TOP10].reverse().map(d=>d.client);
+        const vals   = [...TOP10].reverse().map(d=>d.ca);
+        chTop10 = new ApexCharts(el, {
+            chart: { type:'bar', height: Math.max(300, labels.length * 38), background:'transparent', toolbar:{show:false}, fontFamily:'Inter,sans-serif' },
+            plotOptions: { bar:{ horizontal:true, borderRadius:6, dataLabels:{position:'top'} } },
+            series: [{ name:'CA Total', data: vals }],
+            xaxis: { labels: { ...T.label, formatter: fmt } },
+            yaxis: { labels: { style:{ colors:'#c4cad6', fontSize:'12px', fontFWeight:'500' } } },
+            grid: T.grid,
+            colors: ['#e8321a'],
+            fill: { type:'gradient', gradient:{ shade:'dark', type:'horizontal', gradientToColors:['#ff6b4a'], shadeIntensity:.5 } },
+            tooltip: {
+                ...T.tooltip,
+                custom: ({dataPointIndex}) => {
+                    const c = TOP10[TOP10.length-1-dataPointIndex];
+                    return `<div style="background:#1a2436;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px;font-size:12px;color:#f1f5f9;font-family:Inter,sans-serif;min-width:180px">
+                        <div style="font-weight:700;color:#e8321a;margin-bottom:6px">${c.client}</div>
+                        <div style="margin-bottom:3px">CA : <strong>${fmtFR(c.ca)} MAD</strong></div>
+                        ${c.marge ? `<div style="margin-bottom:3px">Marge : <strong>${fmtFR(c.marge)} MAD</strong></div>` : ''}
+                        ${c.volume_gasoil ? `<div>Gasoil : <strong>${fmtFR(c.volume_gasoil)} L</strong></div>` : ''}
+                    </div>`;
+                }
+            },
+            dataLabels: { enabled:true, formatter:fmt, style:{colors:['rgba(255,255,255,0.4)'],fontSize:'10px'}, offsetX:6 }
+        });
+        chTop10.render();
+    }
+
+    // ── Chart 6 : Bubble (Volume Gasoil vs Marge) ────────────────────────────
+    function initBubble() {
+        const el = document.getElementById('apex-bubble');
+        if (!BUBBLE || !BUBBLE.length) {
+            el.innerHTML = '<div style="color:#374151;font-size:12px;padding:40px;text-align:center">Données insuffisantes pour la matrice</div>';
+            return;
+        }
+        // Normaliser la taille de bulle entre 8 et 50
+        const maxZ = Math.max(...BUBBLE.map(d=>d.z));
+        const minZ = Math.min(...BUBBLE.map(d=>d.z));
+        const normZ = d => maxZ === minZ ? 20 : 8 + ((d.z - minZ) / (maxZ - minZ)) * 42;
+
+        const bubbleData = BUBBLE.map(d => ({ x: d.x, y: d.y, z: normZ(d), _raw: d }));
+        if (chBubble) chBubble.destroy();
+        chBubble = new ApexCharts(el, {
+            chart: { type:'bubble', height:295, background:'transparent', toolbar:{show:false}, fontFamily:'Inter,sans-serif', zoom:{enabled:false} },
+            series: [{ name:'Clients', data: bubbleData }],
+            colors: ['#e8321a'],
+            fill: { opacity: .75 },
+            xaxis: { labels:{ ...T.label, formatter: fmt }, title:{text:'Volume Gasoil (L)', style:{color:'#4b5563',fontSize:'10px',fontFamily:'Inter,sans-serif'}} },
+            yaxis: { labels:{ ...T.label, formatter: fmt }, title:{text:'Marge HT (MAD)', style:{color:'#4b5563',fontSize:'10px',fontFamily:'Inter,sans-serif'}} },
+            grid: T.grid,
+            legend: { show:false },
+            tooltip: {
+                ...T.tooltip,
+                custom: ({dataPointIndex, w}) => {
+                    const raw = BUBBLE[dataPointIndex] || {};
+                    return `<div style="background:#1a2436;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px;font-size:12px;color:#f1f5f9;font-family:Inter,sans-serif;min-width:170px">
+                        <div style="font-weight:700;color:#e8321a;margin-bottom:6px">${raw.client||''}</div>
+                        <div>Vol. Gasoil : <strong>${fmtFR(raw.x||0)} L</strong></div>
+                        <div>Marge HT : <strong>${fmtFR(raw.y||0)} MAD</strong></div>
+                        <div>CA Total : <strong>${fmtFR(raw.z||0)} MAD</strong></div>
+                    </div>`;
+                }
+            }
+        });
+        chBubble.render();
+    }
+
+    // ── Chart 7 : Heatmap ────────────────────────────────────────────────────
+    function initHeatmap() {
+        const el = document.getElementById('apex-heatmap');
+        if (!HEATMAP || !HEATMAP.length) {
+            el.innerHTML = '<div style="color:#374151;font-size:12px;padding:40px;text-align:center">Heatmap disponible avec 2+ années de données</div>';
+            return;
+        }
+        if (chHeatmap) chHeatmap.destroy();
+        chHeatmap = new ApexCharts(el, {
+            chart: { type:'heatmap', height:295, background:'transparent', toolbar:{show:false}, fontFamily:'Inter,sans-serif' },
+            series: HEATMAP,
+            colors: ['#e8321a'],
+            xaxis: { labels:T.label },
+            yaxis: { labels:T.label },
+            grid: T.grid,
+            legend: { show:false },
+            dataLabels: { enabled:false },
+            plotOptions: { heatmap:{ shadeIntensity:.85, radius:4, useFillColorAsStroke:false, colorScale:{
+                ranges:[
+                    { from:0,     to:10000,  color:'#1f2937', name:'Faible'  },
+                    { from:10001, to:100000, color:'#7f1d1d', name:'Moyen'   },
+                    { from:100001,to:500000, color:'#c42810', name:'Élevé'   },
+                    { from:500001,to:1e12,   color:'#e8321a', name:'Très élevé' }
+                ]
+            } } },
+            tooltip: { ...T.tooltip, y:{ formatter: v=>`${fmtFR(v)} MAD` } }
+        });
+        chHeatmap.render();
+    }
+
+    // ── Filters ──────────────────────────────────────────────────────────────
+    function populateFilters() {
+        const fs = document.getElementById('f-fournisseur');
+        const fc = document.getElementById('f-client');
+        FILTERS.fournisseurs.forEach(f => { const o=document.createElement('option'); o.value=o.textContent=f; fs.appendChild(o); });
+        FILTERS.clients.forEach(c => { const o=document.createElement('option'); o.value=o.textContent=c; fc.appendChild(o); });
+        if (FILTERS.date_min) document.getElementById('f-date-from').value = FILTERS.date_min;
+        if (FILTERS.date_max) document.getElementById('f-date-to').value   = FILTERS.date_max;
+    }
+
+    let filterTimer = null;
+    function applyFilters() {
+        clearTimeout(filterTimer);
+        filterTimer = setTimeout(async () => {
+            const p = new URLSearchParams({ session_id: SID,
+                date_from: document.getElementById('f-date-from').value,
+                date_to:   document.getElementById('f-date-to').value });
+            const fv = document.getElementById('f-fournisseur').value;
+            const cv = document.getElementById('f-client').value;
+            if (fv) p.append('fournisseur', fv);
+            if (cv) p.append('client', cv);
+            try {
+                const res  = await fetch(`/api/filtered-data?${p}`);
+                const data = await res.json();
+                if (data.error) return;
+                // Update KPIs
+                const ks = data.kpis || {};
+                upKPI('kpi-ca', ks.ca_total); upKPI('kpi-go', ks.volume_gasoil);
+                upKPI('kpi-sp', ks.volume_super); upKPI('kpi-marge', ks.marge_ht);
+                // Update charts
+                if (data.monthly_series) { Object.assign(MD, data.monthly_series); if(chEvolution) chEvolution.updateOptions(buildEvol(curMetric)); if(chCumul) chCumul.updateOptions(buildCumul(curCumul)); }
+                if (data.top10_clients)   { TOP10.length=0; TOP10.push(...data.top10_clients); initTop10(); }
+                if (data.margin_bridge)   { Object.assign(BRIDGE, data.margin_bridge); initBridge(); }
+            } catch(e) { console.error('Filter error', e); }
+        }, 500);
+    }
+
+    function upKPI(id, v) {
+        const el = document.getElementById(id);
+        if (el && v !== undefined) el.textContent = fmtFR(v);
+    }
+
+    function resetFilters() {
+        document.getElementById('f-fournisseur').value = '';
+        document.getElementById('f-client').value = '';
+        document.getElementById('f-date-from').value = FILTERS.date_min;
+        document.getElementById('f-date-to').value   = FILTERS.date_max;
+        applyFilters();
+    }
+
+    function toggleCompare() {
+        compareOn = !compareOn;
+        document.getElementById('compare-toggle').classList.toggle('on', compareOn);
+        if (chEvolution) chEvolution.updateOptions(buildEvol(curMetric));
+        if (chCumul) chCumul.updateOptions(buildCumul(curCumul));
+    }
+
+    // ── Chat ─────────────────────────────────────────────────────────────────
+    function toggleChat() {
+        chatOpen = !chatOpen;
+        document.getElementById('chat-panel').classList.toggle('closed', !chatOpen);
+        document.getElementById('chat-chev').textContent = chatOpen ? '∨' : '∧';
+    }
+
+    function addMsg(html, cls) {
+        const b = document.getElementById('chat-body');
+        const d = document.createElement('div'); d.className = cls; d.innerHTML = html;
+        b.appendChild(d); b.scrollTop = b.scrollHeight; return d;
+    }
+
+    async function sendMsg() {
+        const inp = document.getElementById('chat-inp');
+        const q   = inp.value.trim(); if (!q) return;
+        inp.value = '';
+        document.getElementById('chat-sugs')?.remove();
+        addMsg(q, 'msg-user');
+        const t = addMsg('<span></span><span></span><span></span>', 'msg-typing');
+        try {
+            const r = await fetch('/api/chat', { method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ question:q, session_id:SID }) });
+            const d = await r.json();
+            t.remove(); addMsg((d.answer||'–').replace(/\n/g,'<br>'), 'msg-ai');
+        } catch(e) { t.remove(); addMsg('⚠️ Erreur de connexion.', 'msg-ai'); }
+    }
+
+    function askQ(q) { document.getElementById('chat-inp').value = q; sendMsg(); }
+
+    // ── KPI Counter Animation ─────────────────────────────────────────────────
+    function animateCounters() {
+        document.querySelectorAll('.kpi-value').forEach(el => {
+            const txt = el.textContent.replace(/\s/g,'').replace(',','');
+            const target = parseFloat(txt);
+            if (!target || isNaN(target)) return;
+            let start = null;
+            const step = ts => {
+                if (!start) start = ts;
+                const p = Math.min((ts - start) / 900, 1);
+                const ease = 1 - Math.pow(1 - p, 3);
+                el.textContent = fmtFR(Math.floor(ease * target));
+                if (p < 1) requestAnimationFrame(step);
+                else el.textContent = fmtFR(target);
+            };
+            requestAnimationFrame(step);
+        });
+    }
+
+    // ── Drill-Down Modal ──────────────────────────────────────────────────────
+    function openTransactionsModal() {
+        document.getElementById('transactions-modal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden'; // block page scroll
+        
+        // Load data if not already loaded
+        if (!$.fn.DataTable.isDataTable('#tx-table')) {
+            const tableDataLoading = document.getElementById('tx-loading');
+            tableDataLoading.style.display = 'block';
+            
+            const sessionId = new URLSearchParams(window.location.search).get('session_id') || '{{ session_id }}';
+            
+            $('#tx-table').DataTable({
+                ajax: `/api/transactions?session_id=${sessionId}`,
+                pageLength: 20,
+                lengthMenu: [20, 50, 100, 500],
+                language: {
+                    url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/fr-FR.json'
+                },
+                columns: [
+                    { data: 'datetransaction', title: 'Date' },
+                    { data: 'client', title: 'Client' },
+                    { data: 'fournisseur', title: 'Fournisseur' },
+                    { data: 'ca_total', title: 'CA Total', render: $.fn.dataTable.render.number(' ', ',', 2, '') },
+                    { data: 'volume_gasoil', title: 'Vol Gasoil', render: $.fn.dataTable.render.number(' ', ',', 0, '') },
+                    { data: 'volume_super', title: 'Vol Super', render: $.fn.dataTable.render.number(' ', ',', 0, '') },
+                    { data: 'marge_ht', title: 'Marge HT', render: $.fn.dataTable.render.number(' ', ',', 2, '') }
+                ],
+                order: [[0, "desc"]],
+                initComplete: function() {
+                    tableDataLoading.style.display = 'none';
+                    document.getElementById('tx-table').classList.remove('hidden');
+                }
+            });
+        }
+    }
+
+    function closeTransactionsModal() {
+        document.getElementById('transactions-modal').classList.add('hidden');
+        document.body.style.overflow = 'auto';
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+        populateFilters();
+        initEvol();
+        initDonut();
+        initCumul();
+        initBridge();
+        initTop10();
+        initBubble();
+        initHeatmap();
+        animateCounters();
+    });
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script>
+function exportPDF() {
+    const element = document.querySelector('.main-content');
+    const opt = {
+      margin:       0.2,
+      filename:     'Rapport_SalamaIQ.pdf',
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'landscape' }
+    };
+
+    // Optional: Add a loading state to button
+    alert("Génération du rapport PDF en cours. Veuillez patienter quelques secondes...");
+    html2pdf().set(opt).from(element).save();
+}
+</script>
+
+<!-- ── Transactions Modal (Drill-Down) ── -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+<style>
+    /* DataTables Dark Theme Overrides */
+    .dataTables_wrapper { color: #d1d5db !important; font-family: 'Inter', sans-serif;}
+    .dataTables_wrapper .dataTables_length select, 
+    .dataTables_wrapper .dataTables_filter input {
+        background-color: #1f2937 !important; color: white !important;
+        border: 1px solid #374151 !important; border-radius: 4px; padding: 4px; outline: none;
+    }
+    table.dataTable.no-footer { border-color: #374151 !important; }
+    table.dataTable thead th { border-bottom: 1px solid #374151 !important; color: #9ca3af !important; font-weight: 600;}
+    table.dataTable tbody tr { background-color: transparent !important; }
+    table.dataTable tbody tr:hover { background-color: rgba(255,255,255,0.02) !important; }
+    table.dataTable tbody td { border-top: 1px solid #1f2937 !important; color: #d1d5db !important; }
+    .dataTables_wrapper .dataTables_paginate .paginate_button { color: #9ca3af !important; border-color: transparent !important; }
+    .dataTables_wrapper .dataTables_paginate .paginate_button.current, 
+    .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+        background: #374151 !important; color: white !important; border: 1px solid #4b5563 !important; border-radius: 4px;
+    }
+    .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+        background: #1f2937 !important; color: white !important;
+    }
+</style>
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+<div id="transactions-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity">
+    <div class="bg-[#111827] border border-[#1f2937] rounded-xl shadow-2xl w-[95vw] h-[90vh] flex flex-col relative overflow-hidden">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-[#1f2937] bg-[#070c18]">
+            <div>
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-blue-500">🔎</span> Drill-down Transactionnel
+                </h3>
+                <p class="text-gray-400 text-sm mt-1">Exploration granulaire de la source de données (Maximum 5000 dernières transactions)</p>
+            </div>
+            <button onclick="closeTransactionsModal()" class="text-gray-400 hover:text-white bg-[#1f2937] px-3 py-1.5 rounded-lg transition-colors">
+                ✕ Fermer
+            </button>
+        </div>
+        
+        <!-- Body -->
+        <div class="flex-1 overflow-auto p-6">
+            <div id="tx-loading" class="text-center py-10 text-gray-500">Chargement des transactions...</div>
+            <div class="w-full">
+                <table id="tx-table" class="display w-full hidden" style="width:100%"></table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══ UPLOAD MODAL ══════════════════════════════════════════════════════════ -->
+<div id="upload-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="bg-[#111827] border border-[#1f2937] rounded-2xl shadow-2xl w-full max-w-xl mx-4 relative overflow-hidden">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-[#1f2937] bg-[#070c18]">
+            <div>
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <span class="text-salama-500">➕</span> Importer des fichiers
+                </h3>
+                <p class="text-gray-500 text-xs mt-0.5">Les nouvelles données s'ajouteront à l'historique en BDD</p>
+            </div>
+            <button onclick="closeUploadModal()" class="text-gray-400 hover:text-white bg-[#1f2937] px-3 py-1.5 rounded-lg transition-colors text-sm">✕</button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-6">
+            <form id="upload-modal-form" action="/upload" method="POST" enctype="multipart/form-data">
+
+                <!-- Drop Zone -->
+                <div id="modal-drop-zone"
+                     class="border-2 border-dashed border-[#374151] hover:border-salama-500 rounded-xl p-10 text-center cursor-pointer transition-all mb-4"
+                     onclick="document.getElementById('modal-file-input').click()"
+                     ondragover="event.preventDefault();this.style.borderColor='#e8321a'"
+                     ondragleave="this.style.borderColor=''"
+                     ondrop="handleModalDrop(event)">
+                    <div style="font-size:40px;margin-bottom:12px;">📊</div>
+                    <div class="text-white font-semibold mb-1">Déposez vos fichiers ici</div>
+                    <div class="text-gray-500 text-sm mb-3">ou cliquez pour parcourir</div>
+                    <div class="flex justify-center gap-2">
+                        <span class="text-xs bg-[#1f2937] text-gray-400 border border-[#374151] px-3 py-1 rounded-full font-mono">.xlsx</span>
+                        <span class="text-xs bg-[#1f2937] text-gray-400 border border-[#374151] px-3 py-1 rounded-full font-mono">.xls</span>
+                        <span class="text-xs bg-[#1f2937] text-gray-400 border border-[#374151] px-3 py-1 rounded-full font-mono">.csv</span>
+                    </div>
+                    <input type="file" id="modal-file-input" name="files" class="hidden" accept=".xlsx,.xls,.csv,.xlsm" multiple required>
+                </div>
+
+                <!-- File info -->
+                <div id="modal-file-info" class="hidden mb-4 bg-[#1f2937] rounded-xl px-4 py-3 flex items-center gap-3">
+                    <span class="text-xl">📁</span>
+                    <div class="flex-1">
+                        <div id="modal-file-name" class="text-white text-sm font-medium"></div>
+                        <div id="modal-file-size" class="text-gray-500 text-xs"></div>
+                    </div>
+                    <button type="button" onclick="clearModalFile()" class="text-gray-500 hover:text-white text-lg">✕</button>
+                </div>
+
+                <!-- Progress -->
+                <div id="modal-progress" class="hidden mb-4">
+                    <div class="text-gray-400 text-xs text-center space-y-1">
+                        <div id="mp-1" class="opacity-50">⏳ Lecture des fichiers...</div>
+                        <div id="mp-2" class="opacity-50">🧠 Mapping IA (Qwen)...</div>
+                        <div id="mp-3" class="opacity-50">📊 Calcul des KPIs...</div>
+                    </div>
+                </div>
+
+                <!-- Purge button + Submit -->
+                <div class="flex gap-3">
+                    <button type="button" onclick="purgeDb()"
+                            class="flex-none text-xs text-red-400 border border-red-900/50 bg-red-950/20 hover:bg-red-900/30 px-4 py-3 rounded-xl transition-colors flex items-center gap-2">
+                        🗑️ Vider BDD
+                    </button>
+                    <button type="submit" id="modal-submit-btn"
+                            class="flex-1 bg-gradient-to-r from-salama-500 to-salama-600 text-white font-bold py-3 px-6 rounded-xl text-sm flex items-center justify-center gap-2 transition-all hover:opacity-90">
+                        <span id="modal-btn-icon">🚀</span>
+                        <span id="modal-btn-text">Analyser et Ajouter à la BDD</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Upload Modal ──────────────────────────────────────────────────────────────
+function openUploadModal() {
+    document.getElementById('upload-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+function closeUploadModal() {
+    document.getElementById('upload-modal').classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+function handleModalDrop(e) {
+    e.preventDefault();
+    document.getElementById('modal-drop-zone').style.borderColor = '';
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        document.getElementById('modal-file-input').files = files;
+        showModalFiles(files);
+    }
+}
+
+document.getElementById('modal-file-input').addEventListener('change', function() {
+    if (this.files.length > 0) showModalFiles(this.files);
+});
+
+function showModalFiles(files) {
+    const totalSize = Array.from(files).reduce((acc, f) => acc + f.size, 0);
+    const label = files.length === 1 ? files[0].name : `${files.length} fichiers sélectionnés`;
+    const sizeLabel = totalSize < 1024*1024
+        ? `${(totalSize/1024).toFixed(1)} Ko`
+        : `${(totalSize/1024/1024).toFixed(2)} Mo`;
+    document.getElementById('modal-file-name').textContent = label;
+    document.getElementById('modal-file-size').textContent = sizeLabel;
+    document.getElementById('modal-file-info').classList.remove('hidden');
+}
+
+function clearModalFile() {
+    document.getElementById('modal-file-input').value = '';
+    document.getElementById('modal-file-info').classList.add('hidden');
+}
+
+document.getElementById('upload-modal-form').addEventListener('submit', function() {
+    document.getElementById('modal-submit-btn').disabled = true;
+    document.getElementById('modal-btn-icon').textContent = '⏳';
+    document.getElementById('modal-btn-text').textContent = 'Traitement en cours...';
+    document.getElementById('modal-progress').classList.remove('hidden');
+    // Animate steps
+    let steps = ['mp-1','mp-2','mp-3'];
+    steps.forEach((id, i) => setTimeout(() => {
+        document.getElementById(id).style.opacity = '1';
+        document.getElementById(id).style.color = '#e8321a';
+    }, i * 3000));
+});
+
+async function purgeDb() {
+    if (!confirm('⚠️ Supprimer DÉFINITIVEMENT toutes les données de la base ?')) return;
+    const res = await fetch('/api/purge', { method: 'POST' });
+    const json = await res.json();
+    if (json.status === 'success') {
+        alert('✅ Base de données vidée. La page va se recharger.');
+        window.location.reload();
+    } else {
+        alert('❌ Erreur: ' + json.message);
+    }
+}
+</script>
+
+<!-- ══ BDD MANAGER MODAL ════════════════════════════════════════════════════════ -->
+<div id="bdd-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="bg-[#111827] border border-[#1f2937] rounded-xl shadow-2xl w-[98vw] h-[95vh] flex flex-col relative overflow-hidden">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-[#1f2937] bg-[#070c18]">
+            <div>
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-blue-400">🗄️</span> Gestionnaire de la Base de Données
+                </h3>
+                <p class="text-gray-500 text-xs mt-0.5">Consultez, ajoutez, modifiez ou supprimez des transactions directement</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="openAddModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                    + Ajouter une ligne
+                </button>
+                <button onclick="purgeDb()" class="bg-red-900/40 hover:bg-red-800/60 border border-red-700/50 text-red-300 hover:text-red-100 text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                    🗑️ Vider la BDD
+                </button>
+                <button onclick="closeBddManager()" class="text-gray-400 hover:text-white bg-[#1f2937] px-3 py-2 rounded-lg transition-colors">✕ Fermer</button>
+            </div>
+        </div>
+
+        <!-- Table Body -->
+        <div class="flex-1 overflow-auto p-5">
+            <div id="bdd-loading" class="text-center py-16 text-gray-500 text-sm">Chargement de la base de données...</div>
+            <table id="bdd-table" class="display w-full hidden" style="width:100%"></table>
+        </div>
+    </div>
+</div>
+
+<!-- Add / Edit Transaction Modal -->
+<div id="tx-form-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/70">
+    <div class="bg-[#111827] border border-[#374151] rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-[#1f2937] bg-[#070c18]">
+            <h4 id="tx-form-title" class="text-white font-bold">Ajouter une transaction</h4>
+            <button onclick="closeTxForm()" class="text-gray-400 hover:text-white">✕</button>
+        </div>
+        <div class="p-6">
+            <input type="hidden" id="tx-id">
+            <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <label class="text-xs text-gray-500 mb-1 block">Date de transaction</label>
+                    <input id="tx-date" type="date" class="w-full bg-[#1f2937] border border-[#374151] text-white rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 mb-1 block">Client</label>
+                    <input id="tx-client" type="text" placeholder="Nom du client" class="w-full bg-[#1f2937] border border-[#374151] text-white rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 mb-1 block">Fournisseur</label>
+                    <input id="tx-fournisseur" type="text" placeholder="Nom du fournisseur" class="w-full bg-[#1f2937] border border-[#374151] text-white rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none">
+                </div>
+                <div class="col-span-2">
+                    <label class="text-xs text-gray-500 mb-1 block">Produit</label>
+                    <input id="tx-produit" type="text" placeholder="Gasoil / Super SP" class="w-full bg-[#1f2937] border border-[#374151] text-white rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 mb-1 block">Volume Gasoil (L)</label>
+                    <input id="tx-vol-gasoil" type="number" step="0.01" placeholder="0" class="w-full bg-[#1f2937] border border-[#374151] text-white rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 mb-1 block">Volume Super (L)</label>
+                    <input id="tx-vol-super" type="number" step="0.01" placeholder="0" class="w-full bg-[#1f2937] border border-[#374151] text-white rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 mb-1 block">CA Total (MAD)</label>
+                    <input id="tx-ca" type="number" step="0.01" placeholder="0" class="w-full bg-[#1f2937] border border-[#374151] text-white rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 mb-1 block">Marge HT (MAD)</label>
+                    <input id="tx-marge" type="number" step="0.01" placeholder="0" class="w-full bg-[#1f2937] border border-[#374151] text-white rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none">
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeTxForm()" class="flex-1 bg-[#1f2937] hover:bg-[#374151] text-gray-300 font-semibold py-2.5 rounded-xl transition-colors">Annuler</button>
+                <button onclick="saveTxForm()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition-colors">💾 Enregistrer</button>
+            </div>
+            <div id="tx-form-error" class="hidden mt-3 text-red-400 text-xs text-center"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── BDD Manager ─────────────────────────────────────────────────────────────
+let bddTable = null;
+const SESSION_ID = '{{ session_id }}';
+
+function openBddManager() {
+    document.getElementById('bdd-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    if (!bddTable) loadBddTable();
+}
+function closeBddManager() {
+    document.getElementById('bdd-modal').classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+function loadBddTable() {
+    const loading = document.getElementById('bdd-loading');
+    loading.style.display = 'block';
+
+    if ($.fn.DataTable.isDataTable('#bdd-table')) {
+        bddTable.destroy();
+        document.getElementById('bdd-table').innerHTML = '';
+    }
+
+    bddTable = $('#bdd-table').DataTable({
+        ajax: { url: `/api/transactions?session_id=${SESSION_ID}`, dataSrc: 'data' },
+        pageLength: 25,
+        lengthMenu: [25, 50, 100],
+        language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/fr-FR.json' },
+        columns: [
+            { data: 'id', title: 'ID', width: '50px' },
+            { data: 'datetransaction', title: 'Date', width: '100px' },
+            { data: 'client', title: 'Client' },
+            { data: 'fournisseur', title: 'Fournisseur' },
+            { data: 'produit', title: 'Produit', defaultContent: '—' },
+            { data: 'ca_total', title: 'CA (MAD)', render: $.fn.dataTable.render.number(' ', ',', 2, '') },
+            { data: 'volume_gasoil', title: 'Vol. Gasoil', render: $.fn.dataTable.render.number(' ', ',', 0, '') },
+            { data: 'volume_super', title: 'Vol. Super', render: $.fn.dataTable.render.number(' ', ',', 0, '') },
+            { data: 'marge_ht', title: 'Marge HT', render: $.fn.dataTable.render.number(' ', ',', 2, '') },
+            {
+                data: 'id', title: 'Actions', orderable: false, searchable: false, width: '110px',
+                render: (id, type, row) => `
+                    <div style="display:flex;gap:6px;">
+                        <button onclick='editRow(${JSON.stringify(row)})' style="background:#1d4ed8;color:white;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px;">✏️</button>
+                        <button onclick='deleteRow(${id})' style="background:#7f1d1d;color:white;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px;">🗑️</button>
+                    </div>`
+            }
+        ],
+        order: [[0, 'desc']],
+        initComplete: () => {
+            loading.style.display = 'none';
+            document.getElementById('bdd-table').classList.remove('hidden');
+        }
+    });
+}
+
+// ── Add / Edit ─────────────────────────────────────────────────────────────
+function openAddModal() {
+    document.getElementById('tx-id').value = '';
+    document.getElementById('tx-form-title').textContent = 'Ajouter une transaction';
+    ['tx-date','tx-client','tx-fournisseur','tx-produit','tx-vol-gasoil','tx-vol-super','tx-ca','tx-marge']
+        .forEach(id => document.getElementById(id).value = '');
+    document.getElementById('tx-form-error').classList.add('hidden');
+    document.getElementById('tx-form-modal').classList.remove('hidden');
+}
+
+function editRow(row) {
+    document.getElementById('tx-id').value = row.id;
+    document.getElementById('tx-form-title').textContent = `Modifier la transaction #${row.id}`;
+    const rawDate = row.datetransaction ? row.datetransaction.split('/').reverse().join('-') : '';
+    document.getElementById('tx-date').value = rawDate;
+    document.getElementById('tx-client').value = row.client || '';
+    document.getElementById('tx-fournisseur').value = row.fournisseur || '';
+    document.getElementById('tx-produit').value = row.produit || '';
+    document.getElementById('tx-vol-gasoil').value = row.volume_gasoil || 0;
+    document.getElementById('tx-vol-super').value = row.volume_super || 0;
+    document.getElementById('tx-ca').value = row.ca_total || 0;
+    document.getElementById('tx-marge').value = row.marge_ht || 0;
+    document.getElementById('tx-form-error').classList.add('hidden');
+    document.getElementById('tx-form-modal').classList.remove('hidden');
+}
+
+function closeTxForm() {
+    document.getElementById('tx-form-modal').classList.add('hidden');
+}
+
+async function saveTxForm() {
+    const txId = document.getElementById('tx-id').value;
+    const payload = {
+        datetransaction: document.getElementById('tx-date').value,
+        client: document.getElementById('tx-client').value,
+        fournisseur: document.getElementById('tx-fournisseur').value,
+        produit: document.getElementById('tx-produit').value,
+        volume_gasoil: document.getElementById('tx-vol-gasoil').value,
+        volume_super: document.getElementById('tx-vol-super').value,
+        ca_total: document.getElementById('tx-ca').value,
+        marge_ht: document.getElementById('tx-marge').value,
+    };
+
+    const url = txId ? `/api/transactions/${txId}/update` : '/api/transactions/add';
+    const method = txId ? 'PUT' : 'POST';
+
+    try {
+        const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const json = await res.json();
+        if (json.status === 'success') {
+            closeTxForm();
+            loadBddTable(); // Rechargement
+        } else {
+            document.getElementById('tx-form-error').textContent = '❌ ' + (json.error || 'Erreur inconnue');
+            document.getElementById('tx-form-error').classList.remove('hidden');
+        }
+    } catch (err) {
+        document.getElementById('tx-form-error').textContent = `❌ Erreur réseau: ${err}`;
+        document.getElementById('tx-form-error').classList.remove('hidden');
+    }
+}
+
+// ── Delete ──────────────────────────────────────────────────────────────────
+async function deleteRow(id) {
+    if (!confirm(`Supprimer définitivement la transaction #${id} ?`)) return;
+    const res = await fetch(`/api/transactions/${id}/delete`, { method: 'DELETE' });
+    const json = await res.json();
+    if (json.status === 'success') {
+        loadBddTable();
+    } else {
+        alert('❌ Erreur: ' + json.error);
+    }
+}
+</script>
+
+</body>
+</html>
