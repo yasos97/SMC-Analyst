@@ -11,13 +11,23 @@ class Transaction(db.Model):
     
     datetransaction = db.Column(db.DateTime, nullable=True)
     client = db.Column(db.String(200), nullable=True)
-    fournisseur = db.Column(db.String(200), nullable=True)
-    produit = db.Column(db.String(100), nullable=True)
+    statut = db.Column(db.String(200), nullable=True)
     
     volume_gasoil = db.Column(db.Float, default=0.0)
     volume_super = db.Column(db.Float, default=0.0)
-    ca_total = db.Column(db.Float, default=0.0)
-    marge_ht = db.Column(db.Float, default=0.0)
+    
+    marge_ht = db.Column(db.Float, nullable=True)
+    ca_total = db.Column(db.Float, nullable=True)
+    ca = db.Column(db.Float, nullable=True)
+    achat_ht = db.Column(db.Float, nullable=True)
+    
+    prix_achat_gasoil_ht = db.Column(db.Float, nullable=True)
+    prix_achat_super_ht = db.Column(db.Float, nullable=True)
+    prix_vente_gasoil_ttc = db.Column(db.Float, nullable=True)
+    prix_vente_super_ttc = db.Column(db.Float, nullable=True)
+    prix_vente_gasoil_ht = db.Column(db.Float, nullable=True)
+    prix_vente_super_ht = db.Column(db.Float, nullable=True)
+    marge_unitaire = db.Column(db.Float, nullable=True)
 
 def init_db(app):
     db.init_app(app)
@@ -32,5 +42,8 @@ def load_all_transactions():
 
 def clear_database():
     """Vide toutes les données (cas d'erreur)."""
-    db.session.query(Transaction).delete()
+    # Plus rapide: utilise DELETE FROM au lieu de query().delete()
+    db.session.execute(db.delete(Transaction))
     db.session.commit()
+    # Force la libération de la mémoire
+    db.session.expire_all()

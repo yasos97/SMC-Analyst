@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python app.py)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(curl -s http://127.0.0.1:5000/)"
+    ]
+  }
+}

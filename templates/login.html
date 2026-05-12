@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SalamaIQ — Accès Sécurisé</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #e8321a;
+            --primary-dark: #c42810;
+            --slate-900: #0f172a;
+            --slate-600: #475569;
+            --slate-200: #e2e8f0;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-card {
+            background: white;
+            padding: 40px;
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 8px;
+            color: var(--slate-900);
+        }
+
+        .logo span { color: var(--primary); }
+
+        .subtitle {
+            color: var(--slate-600);
+            font-size: 14px;
+            margin-bottom: 32px;
+        }
+
+        .form-group {
+            text-align: left;
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--slate-600);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--slate-200);
+            border-radius: 12px;
+            font-size: 15px;
+            box-sizing: border-box;
+            transition: all 0.2s;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(232, 50, 26, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 8px;
+        }
+
+        .btn:hover { background: var(--primary-dark); }
+
+        .qr-section {
+            margin-bottom: 24px;
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 16px;
+            border: 1px dashed var(--slate-200);
+        }
+
+        .qr-section img {
+            width: 180px;
+            height: 180px;
+            margin-bottom: 12px;
+        }
+
+        .error {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            border: 1px solid #fee2e2;
+        }
+
+        .otp-input {
+            letter-spacing: 0.5em;
+            text-align: center;
+            font-size: 20px;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <div class="logo">Salama<span>IQ</span></div>
+        <p class="subtitle">Accès restreint aux analystes autorisés</p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        {% if step == 'setup' %}
+        <div class="qr-section">
+            <img src="data:image/png;base64,{{ qr_code }}" alt="QR Code 2FA">
+            <p style="font-size: 12px; color: var(--slate-600); line-height: 1.5;">
+                Scannez ce code avec <b>Google Authenticator</b> pour configurer votre accès.
+            </p>
+        </div>
+        {% endif %}
+
+        <form method="POST">
+            {% if step == 'password' %}
+            <div class="form-group">
+                <label>Mot de passe</label>
+                <input type="password" name="password" placeholder="••••••••" required autofocus>
+            </div>
+            {% else %}
+            <div class="form-group">
+                <label>Code de sécurité (6 chiffres)</label>
+                <input type="text" name="otp" class="otp-input" placeholder="000000" maxlength="6" required autofocus autocomplete="off">
+            </div>
+            {% endif %}
+            
+            <button type="submit" class="btn">
+                {% if step == 'password' %}Continuer{% else %}Se connecter{% endif %}
+            </button>
+        </form>
+    </div>
+
+</body>
+</html>

@@ -90,15 +90,25 @@ def compute_kpis(df: pd.DataFrame) -> dict:
     marge_n1 = _safe_sum(df_n1, 'marge_ht')
     marge_variation = _calc_variation(marge_n, marge_n1)
 
+    # ── Volume Total ─────────────────────────────────────────────────────────
+    vol_total_n = vol_gasoil_n + vol_super_n
+    vol_total_n1 = vol_gasoil_n1 + vol_super_n1
+    vol_total_variation = _calc_variation(vol_total_n, vol_total_n1)
+
     # ── Taux de Marge ────────────────────────────────────────────────────────
     taux_marge_n = round((marge_n / ca_n * 100), 2) if ca_n > 0 else 0.0
     taux_marge_n1 = round((marge_n1 / ca_n1 * 100), 2) if ca_n1 > 0 else 0.0
+
+    # ── Marge Unitaire ───────────────────────────────────────────────────────
+    marge_unit_n = round(marge_n / vol_total_n, 4) if vol_total_n > 0 else 0.0
+    marge_unit_n1 = round(marge_n1 / vol_total_n1, 4) if vol_total_n1 > 0 else 0.0
+    marge_unit_variation = _calc_variation(marge_unit_n, marge_unit_n1)
 
     # ── Métadonnées ──────────────────────────────────────────────────────────
     date_debut = str(df['datetransaction'].min().date()) if 'datetransaction' in df.columns else 'N/D'
     date_fin = str(df['datetransaction'].max().date()) if 'datetransaction' in df.columns else 'N/D'
     nb_clients = int(df['client'].nunique()) if 'client' in df.columns else 0
-    nb_fournisseurs = int(df['fournisseur'].nunique()) if 'fournisseur' in df.columns else 0
+    nb_statuts = int(df['statut'].nunique()) if 'statut' in df.columns else 0
 
     # ── KPIs Avancés pour la Variation Mois en Cours ────────────────────────
     current_month_kpis = {}
@@ -122,6 +132,10 @@ def compute_kpis(df: pd.DataFrame) -> dict:
         'ca_total': round(ca_n, 2),
         'ca_total_n1': round(ca_n1, 2),
         'ca_variation': ca_variation,
+        # Volume Total
+        'volume_total': round(vol_total_n, 2),
+        'volume_total_n1': round(vol_total_n1, 2),
+        'vol_total_variation': vol_total_variation,
         # Volume Gasoil
         'volume_gasoil': round(vol_gasoil_n, 2),
         'volume_gasoil_n1': round(vol_gasoil_n1, 2),
@@ -136,6 +150,9 @@ def compute_kpis(df: pd.DataFrame) -> dict:
         'marge_variation': marge_variation,
         'taux_marge': taux_marge_n,
         'taux_marge_n1': taux_marge_n1,
+        'marge_unitaire': marge_unit_n,
+        'marge_unitaire_n1': marge_unit_n1,
+        'marge_unitaire_variation': marge_unit_variation,
         # Années
         'current_year': current_year,
         'previous_year': previous_year,
@@ -144,7 +161,7 @@ def compute_kpis(df: pd.DataFrame) -> dict:
         'date_fin': date_fin,
         'total_transactions': len(df),
         'nb_clients': nb_clients,
-        'nb_fournisseurs': nb_fournisseurs,
+        'nb_statuts': nb_statuts,
         # Mois en cours
         **current_month_kpis,
     }
@@ -154,92 +171,52 @@ def compute_kpis(df: pd.DataFrame) -> dict:
 
 def get_monthly_series(df: pd.DataFrame) -> dict:
     """
-    Calcule les séries mensuelles pour les graphiques d'évolution N vs N-1.
+    Calcule les séries mensuelles pour les graphiques d'évolution multi-années.
 
     Returns:
-        Dict avec labels et séries pour CA, volumes, marge
+        Dict avec labels et séries dynamiques par année pour CA, volumes, marge.
+        Format: {'ca': {'2025': [...], '2024': [...]}, 'vol_gasoil': {...}, ...}
     """
+    month_labels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
+    months = list(range(1, 13))
+
     if 'datetransaction' not in df.columns or df.empty:
-        empty_series = [0.0] * 12
         return {
-            'labels': ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun',
-                       'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'],
-            'ca_n': empty_series, 'ca_n1': empty_series,
-            'vol_gasoil_n': empty_series, 'vol_gasoil_n1': empty_series,
-            'vol_super_n': empty_series, 'vol_super_n1': empty_series,
-            'marge_n': empty_series, 'marge_n1': empty_series,
+            'labels': month_labels,
+            'ca': {}, 'vol_gasoil': {}, 'vol_super': {}, 'marge': {}
         }
 
-    df_n, df_n1, current_year, previous_year = _split_by_year(df)
-    months = list(range(1, 13))
-    month_labels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun',
-                    'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
+    # Grouper par année
+    years_in_data = sorted(df['datetransaction'].dt.year.dropna().unique().tolist(), reverse=True)
+    
+    # On limite à 5 années max pour la clarté visuelle
+    years_to_process = years_in_data[:5]
 
-    def monthly_agg(df_year: pd.DataFrame, col: str) -> list:
-        if df_year.empty or col not in df_year.columns:
+    def monthly_agg_by_year(df_yr, col):
+        if df_yr.empty or col not in df_yr.columns:
             return [0.0] * 12
-        grp = df_year.groupby(df_year['datetransaction'].dt.month)[col].sum()
+        grp = df_yr.groupby(df_yr['datetransaction'].dt.month)[col].sum()
         return [round(float(grp.get(m, 0.0)), 2) for m in months]
 
-    
-    # ── Prédictions (Forecast) ────────────────────────────────────────────────
-    # On reconstruit une série temporelle continue (N-1 puis N) propre
-    def get_continuous_series(col):
-        hist = []
-        for v in monthly_agg(df_n1, col): 
-            if v > 0: hist.append(v)
-        for v in monthly_agg(df_n, col): 
-            if v > 0: hist.append(v)
-        return hist
-        
-    ca_hist = get_continuous_series('ca_total')
-    ca_future = generate_forecast(ca_hist, periods=3)
-    
-    # Placer la prédiction au bon endroit dans un tableau de 12 valeurs (si N n'est pas fini)
-    # ou créer 3 mois fictifs (M+1, M+2, M+3)
-    n_counts = sum(1 for v in monthly_agg(df_n, 'ca_total') if v > 0)
-    
-    extended_labels = month_labels.copy()
-    ca_forecast = [None] * 12
-    
-    if n_counts == 12:
-        # Année pleine, on ajoute M+1, M+2, M+3
-        extended_labels += ['Jan (N+1)', 'Fév (N+1)', 'Mar (N+1)']
-        ca_forecast += ca_future
-        
-        ca_n_ext = monthly_agg(df_n, 'ca_total') + [None, None, None]
-        ca_n1_ext = monthly_agg(df_n1, 'ca_total') + [None, None, None]
-    else:
-        # Année en cours, on comble les mois restants
-        ca_n_ext = monthly_agg(df_n, 'ca_total')
-        ca_n1_ext = monthly_agg(df_n1, 'ca_total')
-        
-        idx = n_counts
-        for i, val in enumerate(ca_future):
-            if idx + i < 12:
-                ca_forecast[idx + i] = round(val, 2)
-            else:
-                extended_labels.append(f"M+{idx+i-11}")
-                ca_forecast.append(round(val, 2))
-                ca_n_ext.append(None)
-                ca_n1_ext.append(None)
-
-    return {
-        'labels': extended_labels,
-        'current_year': current_year,
-        'previous_year': previous_year,
-        
-        'ca_n': ca_n_ext,
-        'ca_n1': ca_n1_ext,
-        'ca_forecast': ca_forecast,
-        
-        'vol_gasoil_n': monthly_agg(df_n, 'volume_gasoil') + [None]*(len(extended_labels)-12),
-        'vol_gasoil_n1': monthly_agg(df_n1, 'volume_gasoil') + [None]*(len(extended_labels)-12),
-        'vol_super_n': monthly_agg(df_n, 'volume_super') + [None]*(len(extended_labels)-12),
-        'vol_super_n1': monthly_agg(df_n1, 'volume_super') + [None]*(len(extended_labels)-12),
-        'marge_n': monthly_agg(df_n, 'marge_ht') + [None]*(len(extended_labels)-12),
-        'marge_n1': monthly_agg(df_n1, 'marge_ht') + [None]*(len(extended_labels)-12),
+    series = {
+        'labels': month_labels,
+        'ca': {},
+        'vol_gasoil': {},
+        'vol_super': {},
+        'marge': {}
     }
+
+    for yr in years_to_process:
+        yr_str = str(int(yr))
+        df_yr = df[df['datetransaction'].dt.year == yr]
+        
+        # On ne remplit que s'il y a des données, ou on remplit de zéros
+        series['ca'][yr_str] = monthly_agg_by_year(df_yr, 'ca_total')
+        series['vol_gasoil'][yr_str] = monthly_agg_by_year(df_yr, 'volume_gasoil')
+        series['vol_super'][yr_str] = monthly_agg_by_year(df_yr, 'volume_super')
+        series['marge'][yr_str] = monthly_agg_by_year(df_yr, 'marge_ht')
+
+    return series
 
 
 # ─── Top 10 Clients ───────────────────────────────────────────────────────────
@@ -352,22 +329,22 @@ def get_product_mix(df: pd.DataFrame) -> dict:
 
 def get_cumulative_series(df: pd.DataFrame) -> dict:
     """
-    Calcule la courbe cumulée du CA mois par mois pour N et N-1.
+    Calcule la courbe cumulée du CA mois par mois multi-années.
     Utilisé pour le graphique 'Progression Cumulée'.
     """
-    if 'datetransaction' not in df.columns or df.empty:
-        empty = [0.0] * 12
-        return {'labels': ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'],
-                'cumul_n': empty, 'cumul_n1': empty}
-
-    df_n, df_n1, current_year, previous_year = _split_by_year(df)
-    months = list(range(1, 13))
     month_labels = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+    months = list(range(1, 13))
 
-    def cumul(df_year, col):
-        if df_year.empty or col not in df_year.columns:
+    if 'datetransaction' not in df.columns or df.empty:
+        return {'labels': month_labels, 'ca': {}, 'marge': {}}
+
+    years_in_data = sorted(df['datetransaction'].dt.year.dropna().unique().tolist(), reverse=True)
+    years_to_process = years_in_data[:5]
+
+    def cumul(df_yr, col):
+        if df_yr.empty or col not in df_yr.columns:
             return [0.0] * 12
-        grp = df_year.groupby(df_year['datetransaction'].dt.month)[col].sum()
+        grp = df_yr.groupby(df_yr['datetransaction'].dt.month)[col].sum()
         monthly = [float(grp.get(m, 0.0)) for m in months]
         # Running sum
         total = 0.0
@@ -377,15 +354,94 @@ def get_cumulative_series(df: pd.DataFrame) -> dict:
             result.append(round(total, 2))
         return result
 
-    return {
+    series = {
         'labels': month_labels,
-        'current_year': current_year,
-        'previous_year': previous_year,
-        'cumul_n': cumul(df_n, 'ca_total'),
-        'cumul_n1': cumul(df_n1, 'ca_total'),
-        'cumul_marge_n': cumul(df_n, 'marge_ht'),
-        'cumul_marge_n1': cumul(df_n1, 'marge_ht'),
+        'ca': {},
+        'marge': {}
     }
+
+    for yr in years_to_process:
+        yr_str = str(int(yr))
+        df_yr = df[df['datetransaction'].dt.year == yr]
+        series['ca'][yr_str] = cumul(df_yr, 'ca_total')
+        series['marge'][yr_str] = cumul(df_yr, 'marge_ht')
+
+    return series
+
+
+# ─── Analyse du Spread (Achat HT vs Vente HT) ────────────────────────────────
+
+def get_spread_analysis(df: pd.DataFrame) -> dict:
+    """
+    Agrégation mensuelle des moyennes de prix d'achat HT vs prix de vente HT.
+    Retourne des listes par mois (1 à 12).
+    """
+    month_labels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
+    months = list(range(1, 13))
+
+    series = {
+        'labels': month_labels,
+        'gasoil': {'achat': [0]*12, 'vente': [0]*12},
+        'super': {'achat': [0]*12, 'vente': [0]*12}
+    }
+
+    if 'datetransaction' not in df.columns or df.empty:
+        return series
+
+    # Fonction locale pour calculer la moyenne mensuelle d'une colonne de prix
+    def get_monthly_avg(col_name):
+        if col_name not in df.columns:
+            return [0.0]*12
+        # Ne garder que les prix > 0 pour ne pas fausser la moyenne avec des 0
+        df_valid = df[df[col_name] > 0]
+        if df_valid.empty:
+            return [0.0]*12
+        grp = df_valid.groupby(df_valid['datetransaction'].dt.month)[col_name].mean()
+        return [round(float(grp.get(m, 0.0)), 2) for m in months]
+
+    series['gasoil']['achat'] = get_monthly_avg('prix_achat_gasoil_ht')
+    series['gasoil']['vente'] = get_monthly_avg('prix_vente_gasoil_ht')
+    series['super']['achat'] = get_monthly_avg('prix_achat_super_ht')
+    series['super']['vente'] = get_monthly_avg('prix_vente_super_ht')
+
+    return series
+
+
+# ─── Rentabilité Client (Scatter Plot) ───────────────────────────────────────
+
+def get_client_profitability(df: pd.DataFrame) -> list:
+    """
+    Agrégation par client : X = CA, Y = Marge HT.
+    Retourne une liste d'objets pour le scatter plot.
+    """
+    if 'client' not in df.columns or df.empty:
+        return []
+
+    agg_dict = {}
+    if 'ca_total' in df.columns: agg_dict['ca_total'] = 'sum'
+    if 'marge_ht' in df.columns: agg_dict['marge_ht'] = 'sum'
+    if 'volume_gasoil' in df.columns: agg_dict['volume_gasoil'] = 'sum'
+    if 'volume_super' in df.columns: agg_dict['volume_super'] = 'sum'
+
+    if not agg_dict:
+        return []
+
+    grp = df.groupby('client').agg(agg_dict).reset_index()
+    
+    # Filtrer les valeurs négatives ou nulles
+    grp = grp[(grp['ca_total'] > 0) & (grp['marge_ht'] > 0)]
+
+    result = []
+    for _, row in grp.iterrows():
+        result.append({
+            'name': str(row['client']),
+            'data': [[
+                round(float(row.get('ca_total', 0)), 2),
+                round(float(row.get('marge_ht', 0)), 2)
+            ]],
+            'vol_total': round(float(row.get('volume_gasoil', 0)) + float(row.get('volume_super', 0)), 2)
+        })
+    return result
 
 
 # ─── Scatter / Bubble Clients (Volume vs Marge) ───────────────────────────────
@@ -482,10 +538,10 @@ def get_data_summary_for_chat(df: pd.DataFrame, kpis: dict) -> dict:
             'periode_fin': kpis.get('date_fin'),
             'nb_transactions': kpis.get('total_transactions', 0),
             'nb_clients_distincts': kpis.get('nb_clients', 0),
-            'nb_fournisseurs': kpis.get('nb_fournisseurs', 0),
+            'nb_statuts': kpis.get('nb_statuts', 0),
         },
         'top5_clients_par_ca': [],
-        'top5_fournisseurs_par_marge': [],
+        'top5_statuts_par_marge': [],
         'repartition_produits': {},
     }
 
@@ -497,12 +553,12 @@ def get_data_summary_for_chat(df: pd.DataFrame, kpis: dict) -> dict:
             for k, v in top5_c.items()
         ]
 
-    # Top 5 fournisseurs
-    if 'fournisseur' in df.columns and 'marge_ht' in df.columns:
-        top5_f = df.groupby('fournisseur')['marge_ht'].sum().nlargest(5)
-        summary['top5_fournisseurs_par_marge'] = [
-            {'fournisseur': str(k), 'marge_mad': round(float(v), 2)}
-            for k, v in top5_f.items()
+    # Top 5 statuts
+    if 'statut' in df.columns and 'marge_ht' in df.columns:
+        top5_s = df.groupby('statut')['marge_ht'].sum().nlargest(5)
+        summary['top5_statuts_par_marge'] = [
+            {'statut': str(k), 'marge_mad': round(float(v), 2)}
+            for k, v in top5_s.items()
         ]
 
     # Répartition produits

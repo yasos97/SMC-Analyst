@@ -4,7 +4,6 @@ SalamaIQ — Application Flask Principale
 Routes :
   GET  /            → Page d'accueil / upload
   POST /upload      → Pipeline complet de traitement
-  POST /api/chat    → Module Chat IA (Qwen #3)
   GET  /api/filtered-data → Données filtrées pour mise à jour dynamique des graphiques
   GET  /api/filters → Liste des fournisseurs et clients disponibles
 """
@@ -19,23 +18,28 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from flask import (Flask, render_template, request, jsonify,
-                   session, redirect, url_for)
+                   session, redirect, url_for, send_file, Response)
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
+from functools import wraps
+import pyotp
+import qrcode
+import base64
+import io
 
 # ── Base de Données ──────────────────────────────────────────────────────────
 from database.models import db, init_db, load_all_transactions, clear_database, Transaction
 
 # ── Modules SalamaIQ ─────────────────────────────────────────────────────────
+from processing.pdf_generator import generate_client_report
 from processing.ingestion import read_file
-from processing.ai_mapper import map_columns, generate_executive_summary, answer_chat_question
 from processing.normalizer import normalize_dataframe
 from processing.calculator import (
     compute_kpis, get_monthly_series,
     get_top10_clients, get_margin_bridge,
-    get_data_summary_for_chat,
     get_product_mix, get_cumulative_series,
-    get_client_bubble, get_monthly_heatmap
+    get_client_bubble, get_monthly_heatmap,
+    get_spread_analysis, get_client_profitability
 )
 
 # ─── Configuration ────────────────────────────────────────────────────────────
@@ -85,6 +89,69 @@ def jsonify_safe(data: dict):
     )
 
 
+# ─── Sécurité & Authentification ──────────────────────────────────────────────
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('authenticated'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Gestionnaire de connexion : Mot de passe + 2FA."""
+    # Config depuis .env ou défaut
+    ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'salama2026')
+    TOTP_SECRET = os.getenv('TOTP_SECRET')
+    
+    # Si pas de secret TOTP dans .env, on en génère un persistant pour la session
+    if not TOTP_SECRET:
+        if 'temp_totp_secret' not in session:
+            session['temp_totp_secret'] = pyotp.random_base32()
+        TOTP_SECRET = session['temp_totp_secret']
+
+    totp = pyotp.TOTP(TOTP_SECRET)
+
+    if request.method == 'POST':
+        # Étape 1 : Mot de passe
+        if 'password' in request.form:
+            if request.form['password'] == ADMIN_PASSWORD:
+                session['pw_verified'] = True
+                return render_template('login.html', step='otp')
+            return render_template('login.html', step='password', error="Mot de passe incorrect")
+
+        # Étape 2 : OTP
+        if 'otp' in request.form:
+            if not session.get('pw_verified'):
+                return redirect(url_for('login'))
+            
+            if totp.verify(request.form['otp']):
+                session['authenticated'] = True
+                session.pop('pw_verified', None)
+                return redirect(url_for('index'))
+            
+            return render_template('login.html', step='otp', error="Code invalide ou expiré")
+
+    # Rendu initial ou étape OTP
+    if not session.get('pw_verified'):
+        return render_template('login.html', step='password')
+    
+    # Si on est ici, le mot de passe est bon, on montre le QR Code + champ OTP
+    provisioning_uri = totp.provisioning_uri(name="Analyste", issuer_name="SalamaIQ")
+    img = qrcode.make(provisioning_uri)
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    qr_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    
+    return render_template('login.html', step='setup', qr_code=qr_b64)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
 # ─── Utilitaires ─────────────────────────────────────────────────────────────
 
 def allowed_file(filename: str) -> bool:
@@ -103,19 +170,52 @@ def get_dataframe(session_id: str) -> pd.DataFrame | None:
 
 
 def store_dataframe(session_id: str, df: pd.DataFrame):
-    """Insère un DataFrame filtré dans la base SQLite."""
-    cols_to_keep = ['datetransaction', 'client', 'fournisseur', 'produit', 
-                    'volume_gasoil', 'volume_super', 'ca_total', 'marge_ht']
-    cols_available = [c for c in cols_to_keep if c in df.columns]
+    """Enregistre un DataFrame dans la base SQLite (table transaction)."""
+    if df.empty:
+        return
+
+    # On s'assure d'avoir uniquement les colonnes du modèle
+    cols_db = [
+        'datetransaction', 'client', 'statut', 
+        'volume_gasoil', 'volume_super', 
+        'marge_ht', 'ca_total', 'ca', 'achat_ht',
+        'prix_achat_gasoil_ht', 'prix_achat_super_ht',
+        'prix_vente_gasoil_ttc', 'prix_vente_super_ttc',
+        'prix_vente_gasoil_ht', 'prix_vente_super_ht', 'marge_unitaire'
+    ]
     
-    df_db = df[cols_available].copy()
-    if 'datetransaction' in df_db.columns:
-        df_db['datetransaction'] = pd.to_datetime(df_db['datetransaction'])
-        
+    # Remplir les colonnes manquantes avec NaN si nécessaire
+    for c in cols_db:
+        if c not in df.columns:
+            df[c] = np.nan
+
+    df_db = df[cols_db].copy()
+
+    # Dédoublonnage sur la BDD existante (très basique : date + client + volumes + CA)
+    merge_keys = ['datetransaction', 'client', 'volume_gasoil', 'volume_super', 'ca_total']
+    try:
+        existing_df = load_all_transactions()
+        if not existing_df.empty:
+            # Ne garder que les colonnes de merge de existing_df pour éviter les suffixes _x/_y
+            existing_keys = existing_df[merge_keys].drop_duplicates()
+            merged = pd.merge(
+                df_db, existing_keys,
+                on=merge_keys,
+                how='left', indicator=True
+            )
+            df_db = merged[merged['_merge'] == 'left_only'][cols_db].copy()
+    except Exception as e:
+        print(f"[SalamaIQ] Info: {e}")
+
+    if df_db.empty:
+        print("[SalamaIQ] Aucune nouvelle donnée à insérer (doublons détectés).")
+        return
+
     df_db['batch_id'] = str(uuid.uuid4())
-    
+
     # Enregistrer en base
     df_db.to_sql('transaction', db.engine, if_exists='append', index=False)
+    print(f"[SalamaIQ] {len(df_db)} nouvelles transactions insérées.")
 
 
 def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
@@ -138,15 +238,32 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         except Exception:
             pass
 
-    if filters.get('fournisseur') and 'fournisseur' in df_filtered.columns:
-        fournisseurs = filters['fournisseur'] if isinstance(filters['fournisseur'], list) else [filters['fournisseur']]
-        if fournisseurs and fournisseurs != ['']:
-            df_filtered = df_filtered[df_filtered['fournisseur'].isin(fournisseurs)]
+    if filters.get('statut') and 'statut' in df_filtered.columns:
+        statuts = filters['statut'] if isinstance(filters['statut'], list) else [filters['statut']]
+        if statuts and statuts != ['']:
+            df_filtered = df_filtered[df_filtered['statut'].isin(statuts)]
 
     if filters.get('client') and 'client' in df_filtered.columns:
         clients = filters['client'] if isinstance(filters['client'], list) else [filters['client']]
         if clients and clients != ['']:
             df_filtered = df_filtered[df_filtered['client'].isin(clients)]
+
+    if filters.get('years') and 'datetransaction' in df_filtered.columns:
+        years = filters['years'] if isinstance(filters['years'], list) else [filters['years']]
+        if years and years != ['']:
+            try:
+                # Convertir les années de string en int
+                years_int = sorted([int(y) for y in years])
+                
+                # On inclut toujours l'année précédant la sélection minimale pour permettre la comparaison N-1
+                comparison_years = years_int.copy()
+                if not filters.get('date_from') and not filters.get('date_to'):
+                    prev_year = min(years_int) - 1
+                    comparison_years.append(prev_year)
+                
+                df_filtered = df_filtered[df_filtered['datetransaction'].dt.year.isin(comparison_years)]
+            except Exception:
+                pass
 
     return df_filtered
 
@@ -161,10 +278,16 @@ def prepare_dashboard_data(df: pd.DataFrame) -> dict:
     cumulative = get_cumulative_series(df)
     client_bubble = get_client_bubble(df)
     heatmap = get_monthly_heatmap(df)
+    spread = get_spread_analysis(df)
+    profitability = get_client_profitability(df)
 
     # Listes pour les filtres
-    fournisseurs = sorted(df['fournisseur'].dropna().unique().tolist()) if 'fournisseur' in df.columns else []
+    statuts = sorted(df['statut'].dropna().unique().tolist()) if 'statut' in df.columns else []
     clients = sorted(df['client'].dropna().unique().tolist()) if 'client' in df.columns else []
+    
+    years = []
+    if 'datetransaction' in df.columns:
+        years = sorted(df['datetransaction'].dt.year.dropna().unique().tolist(), reverse=True)
 
     # Dates min/max pour le date picker
     date_min = str(df['datetransaction'].min().date()) if 'datetransaction' in df.columns else ''
@@ -179,9 +302,12 @@ def prepare_dashboard_data(df: pd.DataFrame) -> dict:
         'cumulative': cumulative,
         'client_bubble': client_bubble,
         'heatmap': heatmap,
+        'spread': spread,
+        'profitability': profitability,
         'filters_data': {
-            'fournisseurs': [str(f) for f in fournisseurs],
+            'statuts': [str(s) for s in statuts],
             'clients': [str(c) for c in clients],
+            'years': [str(int(y)) for y in years],
             'date_min': date_min,
             'date_max': date_max,
         }
@@ -191,6 +317,7 @@ def prepare_dashboard_data(df: pd.DataFrame) -> dict:
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 @app.route('/')
+@login_required
 def index():
     """Page principale unifiée : charge le Dashboard depuis la BDD ou affiche l'état vide."""
     session_id = get_session_id()
@@ -200,13 +327,15 @@ def index():
     if df is None or df.empty:
         empty_kpis = {
             'ca_total': 0, 'ca_total_n1': 0, 'ca_variation': None,
+            'volume_total': 0, 'volume_total_n1': 0, 'vol_total_variation': None,
             'volume_gasoil': 0, 'volume_gasoil_n1': 0, 'vol_gasoil_variation': None,
             'volume_super': 0, 'volume_super_n1': 0, 'vol_super_variation': None,
             'marge_ht': 0, 'marge_ht_n1': 0, 'marge_variation': None,
             'taux_marge': 0, 'taux_marge_n1': 0,
+            'marge_unitaire': 0, 'marge_unitaire_n1': 0, 'marge_unitaire_variation': None,
             'current_year': 0, 'previous_year': 0,
             'date_debut': '—', 'date_fin': '—',
-            'total_transactions': 0, 'nb_clients': 0, 'nb_fournisseurs': 0,
+            'total_transactions': 0, 'nb_clients': 0, 'nb_statuts': 0,
             'ca_month': 0, 'ca_prev_month': 0, 'ca_month_variation': None, 'month_label': '—',
         }
         return render_template('dashboard.html',
@@ -222,8 +351,9 @@ def index():
             cumulative=json.dumps({}),
             client_bubble=json.dumps([]),
             heatmap=json.dumps({}),
-            filters_data=json.dumps({'fournisseurs': [], 'clients': [], 'date_min': '', 'date_max': ''}),
-            diagnostic="",
+            spread=json.dumps({}),
+            profitability=json.dumps([]),
+            filters_data=json.dumps({'statuts': [], 'clients': [], 'date_min': '', 'date_max': ''}),
             nb_rows=0,
             columns_found=[],
             red_flags=[],
@@ -245,6 +375,8 @@ def index():
         cumulative=json.dumps(dashboard_data['cumulative'], cls=NumpyEncoder),
         client_bubble=json.dumps(dashboard_data['client_bubble'], cls=NumpyEncoder),
         heatmap=json.dumps(dashboard_data['heatmap'], cls=NumpyEncoder),
+        spread=json.dumps(dashboard_data['spread'], cls=NumpyEncoder),
+        profitability=json.dumps(dashboard_data['profitability'], cls=NumpyEncoder),
         filters_data=json.dumps(dashboard_data['filters_data'], cls=NumpyEncoder),
         diagnostic="",
         nb_rows=len(df),
@@ -254,7 +386,32 @@ def index():
     )
 
 
+@app.route('/download-template', methods=['GET'])
+def download_template():
+    """Génère et télécharge le modèle Excel vierge."""
+    import io
+    from processing.normalizer import REQUIRED_COLUMNS
+    
+    df_template = pd.DataFrame(columns=REQUIRED_COLUMNS)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df_template.to_excel(writer, index=False, sheet_name='Modele_Import')
+        # Ajuster la largeur des colonnes
+        worksheet = writer.sheets['Modele_Import']
+        for i, col in enumerate(REQUIRED_COLUMNS):
+            worksheet.set_column(i, i, max(len(col) + 5, 15))
+            
+    output.seek(0)
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name='Modele_SalamaIQ.xlsx',
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+
 @app.route('/upload', methods=['POST'])
+@login_required
 def upload():
     """
     Pipeline complet de traitement :
@@ -270,17 +427,17 @@ def upload():
         if 'file' in request.files:  # Fallback si ancien input
             files = request.files.getlist('file')
         else:
-            return render_template('index.html', error="Aucun fichier sélectionné.")
+            return jsonify({'status': 'error', 'message': "Aucun fichier sélectionné."}), 400
     else:
         files = request.files.getlist('files')
 
     if not files or all(f.filename == '' for f in files):
-        return render_template('index.html', error="Fichiers invalides.")
+        return jsonify({'status': 'error', 'message': "Fichiers invalides."}), 400
 
     dfs_to_concat = []
     final_mapping = {}
     filenames = []
-    mapping_source = "IA (Qwen)"
+    mapping_source = "Normalisation Standard"
 
     for file in files:
         if not allowed_file(file.filename):
@@ -297,18 +454,8 @@ def upload():
             if df_raw.empty:
                 continue
 
-            # ── Étape 2 : Mapping IA (Qwen #1) ───────────────────────────────────
-            try:
-                ai_mapping = map_columns(raw_headers)
-                if not ai_mapping:
-                    mapping_source = "Heuristique"
-            except Exception as e:
-                print(f"[SalamaIQ] Mapping IA indisponible: {e}")
-                ai_mapping = {}
-                mapping_source = "Heuristique"
-
             # ── Étape 3 : Normalisation (Pandas) ─────────────────────────────────
-            df_norm, mapping = normalize_dataframe(df_raw, ai_mapping)
+            df_norm, mapping = normalize_dataframe(df_raw, {})
             if not df_norm.empty:
                 dfs_to_concat.append(df_norm)
                 final_mapping.update(mapping)
@@ -323,7 +470,7 @@ def upload():
                 pass
 
     if not dfs_to_concat:
-        return render_template('index.html', error="Aucune donnée valide n'a pu être extraite des fichiers fournis.")
+        return jsonify({'status': 'error', 'message': "Aucune donnée valide n'a pu être extraite des fichiers fournis."}), 400
 
     # ── Fusion Finale ────────────────────────────────────────────────────────
     df_clean = pd.concat(dfs_to_concat, ignore_index=True)
@@ -358,18 +505,6 @@ def upload():
     kpis = dashboard_data['kpis']
     filename_display = f"Données Globales ({len(filenames)} nv. fichiers aj.)"
 
-    # ── Étape 5 : Diagnostic IA (Qwen #2) ────────────────────────────────────
-    diagnostic = "Analyse IA en cours..."
-    try:
-        diagnostic = generate_executive_summary(kpis)
-    except Exception as e:
-        print(f"[SalamaIQ] Diagnostic IA indisponible: {e}")
-        diagnostic = (
-            "• **Données chargées avec succès** : Les KPIs et graphiques sont prêts.\n"
-            "• **Analyse IA temporairement indisponible** : Réessayez dans quelques instants.\n"
-            "• **Données fiables** : Tous les calculs sont effectués par le moteur Pandas."
-        )
-
     # ── Rendu du Dashboard ────────────────────────────────────────────────────
     return render_template(
         'dashboard.html',
@@ -385,52 +520,20 @@ def upload():
         cumulative=json.dumps(dashboard_data['cumulative'], cls=NumpyEncoder),
         client_bubble=json.dumps(dashboard_data['client_bubble'], cls=NumpyEncoder),
         heatmap=json.dumps(dashboard_data['heatmap'], cls=NumpyEncoder),
+        spread=json.dumps(dashboard_data['spread'], cls=NumpyEncoder),
+        profitability=json.dumps(dashboard_data['profitability'], cls=NumpyEncoder),
         filters_data=json.dumps(dashboard_data['filters_data'], cls=NumpyEncoder),
-        diagnostic=diagnostic,
         nb_rows=len(df_history),
         columns_found=list(final_mapping.values()),
         red_flags=red_flags,
     )
 
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    """
-    Module Chat IA (Qwen #3).
-    Reçoit une question, génère un résumé Pandas, interroge Qwen.
-    """
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({'error': 'Requête invalide'}), 400
 
-        question = data.get('question', '').strip()
-        session_id = data.get('session_id', get_session_id())
-
-        if not question:
-            return jsonify({'error': 'Question vide'}), 400
-
-        # Récupérer le DataFrame
-        df = get_dataframe(session_id)
-        if df is None or df.empty:
-            return jsonify({
-                'answer': "Aucune donnée chargée. Veuillez d'abord uploader un fichier."
-            })
-
-        # Générer le résumé Pandas (le seul moteur mathématique)
-        kpis = compute_kpis(df)
-        data_summary = get_data_summary_for_chat(df, kpis)
-
-        # Interroger Qwen avec le résumé JSON
-        answer = answer_chat_question(data_summary, question)
-
-        return jsonify({'answer': answer, 'status': 'ok'})
-
-    except Exception as e:
-        return jsonify({'answer': f"Erreur : {str(e)}", 'status': 'error'}), 500
 
 
 @app.route('/api/filtered-data', methods=['GET'])
+@login_required
 def filtered_data():
     """
     Retourne les données recalculées après application des filtres.
@@ -447,8 +550,9 @@ def filtered_data():
         filters = {
             'date_from': request.args.get('date_from'),
             'date_to': request.args.get('date_to'),
-            'fournisseur': request.args.getlist('fournisseur'),
+            'statut': request.args.getlist('statut'),
             'client': request.args.getlist('client'),
+            'years': request.args.getlist('years'),
         }
         df_filtered = apply_filters(df, filters)
 
@@ -463,6 +567,12 @@ def filtered_data():
             'monthly_series': dashboard_data['monthly_series'],
             'top10_clients': dashboard_data['top10_clients'],
             'margin_bridge': dashboard_data['margin_bridge'],
+            'product_mix': dashboard_data['product_mix'],
+            'cumulative': dashboard_data['cumulative'],
+            'client_bubble': dashboard_data['client_bubble'],
+            'heatmap': dashboard_data['heatmap'],
+            'spread': dashboard_data['spread'],
+            'profitability': dashboard_data['profitability'],
             'nb_rows': len(df_filtered),
         })
 
@@ -470,7 +580,71 @@ def filtered_data():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/generate-client-pdf', methods=['GET'])
+@login_required
+def export_client_pdf():
+    """Génère un rapport PDF professionnel côté backend"""
+    try:
+        session_id = request.args.get('session_id', get_session_id())
+        df = get_dataframe(session_id)
+        if df is None or df.empty:
+            return "Aucune donnée disponible", 404
+
+        # Appliquer les mêmes filtres que le dashboard
+        filters = {
+            'date_from': request.args.get('date_from'),
+            'date_to': request.args.get('date_to'),
+            'statut': request.args.getlist('statut'),
+            'client': request.args.getlist('client'),
+            'years': request.args.getlist('years'),
+        }
+        df_filtered = apply_filters(df, filters)
+        
+        if df_filtered.empty:
+            return "Aucune donnée pour ces filtres", 404
+
+        # Préparer les KPIs pour le PDF
+        dashboard_data = prepare_dashboard_data(df_filtered)
+        kpis = dashboard_data['kpis']
+        
+        # Déterminer les labels d'en-tête
+        client_label = ", ".join(filters['client']) if filters['client'] else "Tous les clients"
+        
+        d_min = df_filtered['datetransaction'].min()
+        d_max = df_filtered['datetransaction'].max()
+        p_start = d_min.strftime('%d/%m/%Y') if pd.notnull(d_min) else 'N/A'
+        p_end = d_max.strftime('%d/%m/%Y') if pd.notnull(d_max) else 'N/A'
+        period_label = f"{p_start} au {p_end}"
+        
+        # Générer le PDF (binaire)
+        print(f">>> [PDF] Début génération pour {len(df_filtered)} lignes", flush=True)
+        pdf_content = generate_client_report(kpis, df_filtered, client_label, period_label)
+        print(f">>> [PDF] Binaire généré: {len(pdf_content)} octets", flush=True)
+        
+        # Préparer le nom du fichier (ASCII uniquement pour éviter les bugs de téléchargement)
+        from urllib.parse import quote
+        safe_client = client_label.replace(' ', '_').replace(',', '_')
+        safe_client = "".join(c for c in safe_client if c.isalnum() or c == '_')
+        filename = f"Rapport_SalamaIQ_{safe_client}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        
+        import io
+        return send_file(
+            io.BytesIO(pdf_content),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        print(f">>> [PDF] ERREUR: {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return f"Erreur lors de la génération du PDF: {str(e)}", 500
+        return f"Erreur lors de la génération du PDF: {str(e)}", 500
+
+
 @app.route('/api/transactions', methods=['GET'])
+@login_required
 def get_transactions():
     """Retourne les transactions brutes pour la grille DataTables (Drill-down)"""
     try:
@@ -505,16 +679,16 @@ def get_transactions():
 
 @app.route('/api/filters', methods=['GET'])
 def get_filters():
-    """Retourne les listes de fournisseurs et clients disponibles."""
+    """Retourne les listes de statuts et clients disponibles."""
     try:
         session_id = request.args.get('session_id', get_session_id())
         df = get_dataframe(session_id)
 
         if df is None:
-            return jsonify({'fournisseurs': [], 'clients': []})
+            return jsonify({'statuts': [], 'clients': []})
 
         return jsonify({
-            'fournisseurs': sorted(df['fournisseur'].dropna().unique().tolist()) if 'fournisseur' in df.columns else [],
+            'statuts': sorted(df['statut'].dropna().unique().tolist()) if 'statut' in df.columns else [],
             'clients': sorted(df['client'].dropna().unique().tolist()) if 'client' in df.columns else [],
         })
 
@@ -523,6 +697,7 @@ def get_filters():
 
 
 @app.route('/api/purge', methods=['POST'])
+@login_required
 def api_purge():
     try:
         clear_database()
@@ -535,6 +710,7 @@ def api_purge():
 # ─── Routes BDD Manager (CRUD) ───────────────────────────────────────────────
 
 @app.route('/api/transactions/add', methods=['POST'])
+@login_required
 def add_transaction():
     """Ajoute une transaction manuellement."""
     try:
@@ -546,8 +722,7 @@ def add_transaction():
             batch_id='manual',
             datetransaction=pd.to_datetime(data.get('datetransaction')) if data.get('datetransaction') else None,
             client=data.get('client', ''),
-            fournisseur=data.get('fournisseur', ''),
-            produit=data.get('produit', ''),
+            statut=data.get('statut', ''),
             volume_gasoil=float(data.get('volume_gasoil', 0) or 0),
             volume_super=float(data.get('volume_super', 0) or 0),
             ca_total=float(data.get('ca_total', 0) or 0),
@@ -562,6 +737,7 @@ def add_transaction():
 
 
 @app.route('/api/transactions/<int:tx_id>/update', methods=['PUT'])
+@login_required
 def update_transaction(tx_id):
     """Met à jour une transaction existante."""
     try:
@@ -573,8 +749,7 @@ def update_transaction(tx_id):
         if data.get('datetransaction'):
             tx.datetransaction = pd.to_datetime(data['datetransaction'])
         tx.client = data.get('client', tx.client)
-        tx.fournisseur = data.get('fournisseur', tx.fournisseur)
-        tx.produit = data.get('produit', tx.produit)
+        tx.statut = data.get('statut', tx.statut)
         tx.volume_gasoil = float(data.get('volume_gasoil', tx.volume_gasoil) or 0)
         tx.volume_super = float(data.get('volume_super', tx.volume_super) or 0)
         tx.ca_total = float(data.get('ca_total', tx.ca_total) or 0)
@@ -588,6 +763,7 @@ def update_transaction(tx_id):
 
 
 @app.route('/api/transactions/<int:tx_id>/delete', methods=['DELETE'])
+@login_required
 def delete_transaction(tx_id):
     """Supprime une transaction."""
     try:
@@ -604,10 +780,13 @@ def delete_transaction(tx_id):
 
 # ─── Point d'entrée ──────────────────────────────────────────────────────────
 
+
+
+
 if __name__ == '__main__':
     print("=" * 55)
     print("  SalamaIQ -- SMC Salama Analytics Engine")
-    print("  Version 1.0 | Powered by Pandas + Qwen 3.5")
+    print("  Version 2.0 | Powered by Pandas")
     print("  Dashboard : http://127.0.0.1:5000")
     print("=" * 55)
     app.run(debug=True, port=5000, host='0.0.0.0')
