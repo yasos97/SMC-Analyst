@@ -9,7 +9,6 @@ import os
 import re
 import chardet
 import pandas as pd
-import numpy as np
 
 
 def _detect_header_row(df_raw: pd.DataFrame) -> int:
@@ -50,9 +49,9 @@ def read_file(filepath: str) -> tuple[pd.DataFrame, list]:
     try:
         # ── Lecture brute sans aucun en-tête supposé ─────────────────────────
         if ext in ['.xlsx', '.xlsm']:
-            df_raw = pd.read_excel(filepath, header=None, dtype=str)
+            df_raw = pd.read_excel(filepath, header=None)
         elif ext in ['.xls']:
-            df_raw = pd.read_excel(filepath, header=None, dtype=str, engine='xlrd')
+            df_raw = pd.read_excel(filepath, header=None, engine='xlrd')
         elif ext == '.csv':
             # Auto-détection de l'encodage
             with open(filepath, 'rb') as f:

@@ -9,21 +9,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-utilities.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        salama: { 50: '#fef2f2', 100: '#fee2e2', 200: '#fecaca', 300: '#fca5a5', 400: '#ff6b4a', 500: '#e8321a', 600: '#c42810', 700: '#9a1e0c' },
-                        brand: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155', 800: '#1e293b', 900: '#0f172a' }
-                    },
-                    fontFamily: { inter: ['Inter', 'system-ui', 'sans-serif'] }
-                }
-            }
-        }
-    </script>
     <style>
         *,
         *::before,
@@ -189,6 +176,23 @@
             background: linear-gradient(135deg, #c42810 0%, #9a1e0c 100%);
             transform: translateX(0) translateY(-1px);
             box-shadow: 0 6px 16px rgba(232, 50, 26, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .nav-action-secondary {
+            background: #ffffff;
+            color: #475569 !important;
+            font-weight: 600;
+            border-radius: 10px;
+            margin-top: 6px;
+            border: 1px solid #cbd5e1;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .nav-action-secondary:hover {
+            background: #f8fafc;
+            color: #0f172a !important;
+            border-color: #94a3b8;
+            transform: translateX(0) translateY(-1px);
         }
 
         .sidebar-footer {
@@ -435,44 +439,26 @@
             transform: scale(1.05);
         }
 
-        /* Year Checkboxes Styling */
-        .year-check {
-            cursor: pointer;
-            accent-color: #e8321a;
-        }
-
-        #f-year-list label {
+        /* Toast notification */
+        .upload-toast {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
             display: flex;
             align-items: center;
-            gap: 6px;
-            font-size: 12px;
-            color: #475569;
-            cursor: pointer;
-            padding: 4px 10px;
-            border-radius: 8px;
-            white-space: nowrap;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            transition: all 0.2s;
-            font-weight: 500;
+            justify-content: space-between;
+            animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        #f-year-list label:hover {
-            background: #f1f5f9;
-            border-color: #cbd5e1;
-            transform: translateY(-1px);
-        }
-
-        #f-year-list label:has(input:checked) {
-            background: #e8321a !important;
-            color: white !important;
-            border-color: #e8321a !important;
-            box-shadow: 0 2px 6px rgba(232, 50, 26, 0.2);
-        }
-
-        #f-year-list label:has(input:checked) input {
-            accent-color: white;
-        }
 
         /* ── KPI Cards ───────────────────────────────────────── */
         .cards-grid {
@@ -502,74 +488,104 @@
 
         .kpi-card {
             background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 16px;
-            transition: box-shadow 0.15s ease;
+            border: 1px solid #f1f5f9;
+            border-radius: 16px;
+            padding: 20px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+            overflow: hidden;
         }
 
         .kpi-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: var(--kpi-color, #e8321a);
-            border-radius: 12px 12px 0 0;
+            display: none;
         }
-
+        
         .kpi-card:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+            transform: translateY(-2px);
+        }
+        
+        .kpi-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
         }
 
-        .kpi-icon {
-            font-size: 20px;
-            margin-bottom: 8px;
+        .kpi-icon-wrapper {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--kpi-bg);
+            color: var(--kpi-color);
+        }
+
+        .kpi-icon-wrapper svg {
+            width: 13px;
+            height: 13px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .kpi-body {
+            margin-bottom: 12px;
         }
 
         .kpi-value {
-            font-size: 15px;
+            font-size: 19px;
             font-weight: 800;
             color: #0f172a;
             letter-spacing: -0.3px;
-            line-height: 1.2;
-            margin-bottom: 2px;
+            line-height: 1.1;
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
             font-variant-numeric: tabular-nums;
-            word-break: break-word;
         }
 
         .kpi-unit {
-            font-size: 10px;
-            color: #94a3b8;
+            font-size: 11px;
+            color: #64748b;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
 
         .kpi-label {
-            font-size: 11.5px;
-            color: #64748b;
-            margin-top: 8px;
-            font-weight: 600;
+            font-size: 13px;
+            color: #475569;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+        
+        .kpi-footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-top: 12px;
+            border-top: 1px dashed #e2e8f0;
         }
 
         .kpi-n1 {
-            font-size: 10.5px;
+            font-size: 11px;
             color: #94a3b8;
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px solid rgba(148, 163, 184, 0.15);
             font-weight: 500;
         }
 
         .delta {
-            font-size: 10px;
+            font-size: 10.5px;
             font-weight: 700;
-            padding: 3px 8px;
+            padding: 3px 6px;
             border-radius: 6px;
-            float: right;
+            display: inline-flex;
+            align-items: center;
         }
 
         .delta-up {
@@ -657,6 +673,27 @@
             background: #f8fafc;
             border-radius: 10px;
             padding: 4px;
+        }
+
+        .pd-mode {
+            font-size: 13px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid #e2e8f0;
+            color: #64748b;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.15s ease;
+        }
+
+        .pd-mode.act {
+            background: #e8321a;
+            color: #fff;
+            border-color: #e8321a;
+        }
+
+        .pay-row:hover {
+            background: #f8fafc;
         }
 
         .ctab {
@@ -955,28 +992,23 @@
 
             <div class="nav-section">
                 <div class="nav-label">Tableaux de bord</div>
-                <a href="#kpi-section" class="nav-item active"><span class="nav-icon">📊</span>Vue d'ensemble</a>
-                <a href="#chart-evolution" class="nav-item"><span class="nav-icon">📈</span>Évolution CA</a>
-                <a href="#chart-volume" class="nav-item"><span class="nav-icon">🛢️</span>Évolution Volume</a>
-                <a href="#chart-mix" class="nav-item"><span class="nav-icon">🔵</span>Mix Produits</a>
-                <a href="#chart-clients" class="nav-item"><span class="nav-icon">👥</span>Top Clients</a>
+                <a href="{{ url_for('activite') }}" class="nav-item {% if request.endpoint == 'activite' %}active{% endif %}"><span class="nav-icon">📊</span>Activité (Ventes)</a>
+                
             </div>
 
             <div class="nav-section">
                 <div class="nav-label">Actions</div>
-                <a href="#" onclick="openUploadModal()" class="nav-item nav-action"><span
+                <a href="#" onclick="openUploadModal()" class="nav-item nav-action-secondary"><span
                         class="nav-icon">➕</span>Importer des fichiers</a>
                 <a href="#" onclick="openBddManager()" class="nav-item"><span class="nav-icon">🗄️</span>Gestionnaire
                     BDD</a>
                 <a href="#" onclick="openTransactionsModal()" class="nav-item"><span
-                        class="nav-icon">🔎</span>Drill-Down</a>
-                <a href="#" onclick="exportPDF()" class="nav-item"><span class="nav-icon">📄</span>Exporter PDF</a>
+                        class="nav-icon">🔎</span>Détail des transactions</a>
+                <a href="#" onclick="exportPDF()" class="nav-item nav-action"><span class="nav-icon">📄</span>Exporter PDF</a>
+                <a href="#" onclick="exportExcel()" class="nav-item nav-action" style="background-color: #16A34A; color: white;"><span class="nav-icon">📊</span>Exporter Excel</a>
             </div>
 
-            <div class="sidebar-footer">
-                SalamaIQ v2.0 · SMC Salama<br>
-                {{ nb_rows }} transactions · {{ mapping_source }}
-            </div>
+
         </aside>
         {% endif %}
 
@@ -1006,8 +1038,8 @@
                     Importez vos fichiers Excel pour initialiser votre tableau de bord analytique.</p>
                 <div style="display:flex;gap:12px;margin-top:16px;">
                     <button onclick="openUploadModal()"
-                        style="background:#e8321a;color:white;font-weight:700;font-size:14px;padding:12px 32px;border-radius:10px;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background 0.15s;"
-                        onmouseover="this.style.background='#c42810'" onmouseout="this.style.background='#e8321a'">
+                        style="background:#334155;color:white;font-weight:700;font-size:14px;padding:12px 32px;border-radius:10px;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background 0.15s;box-shadow: 0 4px 12px rgba(0,0,0,0.1);"
+                        onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#334155'">
                         Importer mes premiers fichiers
                     </button>
                     <a href="/download-template"
@@ -1022,17 +1054,6 @@
             </div>
             {% else %}
 
-            <!-- Top bar -->
-            <div class="topbar fade-in">
-                <div class="topbar-title">Salama<span>IQ</span></div>
-                <div class="topbar-sep"></div>
-                <div class="topbar-file">{{ filename }}</div>
-                <span class="topbar-badge badge-ai">{{ mapping_source }}</span>
-                <span class="topbar-badge badge-live">
-                    <div class="dot-live"></div>Actif
-                </span>
-                <div class="topbar-date">{{ kpis.date_debut }} → {{ kpis.date_fin }}</div>
-            </div>
 
             <!-- Red Flags -->
             {% if red_flags %}
@@ -1043,6 +1064,14 @@
                     <div>{{ flag }}</div>
                     {% endfor %}
                 </div>
+            </div>
+            {% endif %}
+
+            <!-- Upload Notification -->
+            {% if session.get('upload_message') %}
+            <div class="upload-toast" id="upload-toast">
+                <span>{{ session.pop('upload_message') }}</span>
+                <span style="cursor:pointer;opacity:0.7;margin-left:20px;" onclick="this.parentElement.style.display='none'">✕</span>
             </div>
             {% endif %}
 
@@ -1058,17 +1087,18 @@
             <!-- Filter bar -->
             <div class="filter-bar slide-up d2" id="filter-bar">
                 <span class="filter-label">Filtres</span>
-                <div id="f-year-list" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                    <!-- Years checkboxes will be here -->
-                </div>
-                <input type="date" id="f-date-from" class="filter-date" onchange="applyFilters()" style="display:none;">
-                <input type="date" id="f-date-to" class="filter-date" onchange="applyFilters()" style="display:none;">
-                <select id="f-statut" class="filter-select" onchange="applyFilters()">
+                <select id="f-year" class="filter-select">
+
+                </select>
+                <select id="f-statut" class="filter-select">
                     <option value="">Tous statuts</option>
                 </select>
-                <select id="f-client" class="filter-select" onchange="applyFilters()">
+                <select id="f-client" class="filter-select">
                     <option value="">Tous clients</option>
                 </select>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;cursor:pointer;padding:8px 12px;border-radius:10px;background:#f1f5f9;border:1px solid #e2e8f0;font-weight:600;margin-right:auto;">
+                    <input type="checkbox" id="f-compare-n1" checked onchange="renderCharts()"> Comparer avec N-1
+                </label>
                 <span class="filter-reset" onclick="resetFilters()">↺ Reset</span>
             </div>
 
@@ -1076,42 +1106,49 @@
             <div class="cards-grid" id="kpi-section">
                 {% macro fmt_num(v) %}{{ "{:,.0f}".format(v) }}{% endmacro %}
 
-                {% macro kpi(id, icon, value, unit, label, n1, variation, color) %}
-                <div class="kpi-card slide-up" style="--kpi-color:{{ color }}">
-                    <div class="kpi-icon">{{ icon }}</div>
-                    <div style="display:flex;align-items:center;justify-content:space-between;">
-                        <div>
-                            <div class="kpi-value" id="{{ id }}">{{ fmt_num(value) }}</div>
-                            <div class="kpi-unit">{{ unit }}</div>
+                {% macro kpi(id, icon_svg, value, unit, label, n1, variation, color, bg) %}
+                <div class="kpi-card slide-up" style="--kpi-color:{{ color }}; --kpi-bg:{{ bg }};">
+                    <div class="kpi-header">
+                        <div class="kpi-icon-wrapper">
+                            {{ icon_svg|safe }}
                         </div>
+                        <div class="kpi-label">{{ label }}</div>
+                    </div>
+                    <div class="kpi-body">
+                        <div class="kpi-value">
+                            <span id="{{ id }}">{{ fmt_num(value) }}</span>
+                            <span class="kpi-unit">{{ unit }}</span>
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
                         <span id="{{ id }}-delta"
                             class="delta {% if variation is not none %}{% if variation > 0 %}delta-up{% elif variation < 0 %}delta-dn{% else %}delta-eq{% endif %}{% endif %}">
                             {% if variation is not none %}
                             {% if variation > 0 %}+{% endif %}{{ "%.1f"|format(variation) }}%
                             {% endif %}
                         </span>
-                    </div>
-                    <div class="kpi-label">{{ label }}</div>
-                    <div class="kpi-n1" id="{{ id }}-n1" {% if n1 <=0 %}style="display:none" {% endif %}>
-                        N-1 : {{ fmt_num(n1) }} {{ unit }}
+                        <span class="kpi-n1" id="{{ id }}-n1" {% if n1 <=0 %}style="display:none" {% endif %}>
+                            vs N-1 ({{ fmt_num(n1) }} {{ unit }})
+                        </span>
                     </div>
                 </div>
                 {% endmacro %}
 
-                {{ kpi('kpi-ca', '💰', kpis.ca_total, 'MAD', 'Chiffre d\'Affaires (Montant FA TTC)', kpis.ca_total_n1,
-                kpis.ca_variation, '#e8321a') }}
-                {{ kpi('kpi-marge', '📈', kpis.marge_ht, 'MAD', 'Marge HT (Taux: ' ~ "%.1f"|format(kpis.taux_marge) ~
-                '%)', kpis.marge_ht_n1, kpis.marge_variation, '#059669') }}
-                {{ kpi('kpi-vol', '📦', kpis.volume_total, 'L', 'Volume Total', kpis.volume_total_n1,
-                kpis.vol_total_variation, '#7c3aed') }}
-                {{ kpi('kpi-go', '⛽', kpis.volume_gasoil, 'L', 'Volume Gasoil', kpis.volume_gasoil_n1,
-                kpis.vol_gasoil_variation, '#2563eb') }}
-                {{ kpi('kpi-sp', '🔶', kpis.volume_super, 'L', 'Volume Super SP', kpis.volume_super_n1,
-                kpis.vol_super_variation, '#d97706') }}
+                {% set i_ca = '<svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>' %}
+                {% set i_mg = '<svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>' %}
+                {% set i_vt = '<svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>' %}
+                {% set i_go = '<svg viewBox="0 0 24 24"><path d="M3 22h12M4 9h10M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/></svg>' %}
+                {% set i_sp = '<svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>' %}
+
+                {{ kpi('kpi-ca', i_ca, kpis.ca_total, 'MAD', 'Chiffre d\'Affaires HT', kpis.ca_total_n1, kpis.ca_variation, '#e8321a', '#fef2f2') }}
+                {{ kpi('kpi-marge', i_mg, kpis.marge_ht, 'MAD', 'Marge HT', kpis.marge_ht_n1, kpis.marge_variation, '#059669', '#ecfdf5') }}
+                {{ kpi('kpi-vol', i_vt, kpis.volume_total, 'L', 'Volume Total', kpis.volume_total_n1, kpis.vol_total_variation, '#7c3aed', '#f5f3ff') }}
+                {{ kpi('kpi-go', i_go, kpis.volume_gasoil, 'L', 'Volume Gasoil', kpis.volume_gasoil_n1, kpis.vol_gasoil_variation, '#2563eb', '#eff6ff') }}
+                {{ kpi('kpi-sp', i_sp, kpis.volume_super, 'L', 'Volume Super SP', kpis.volume_super_n1, kpis.vol_super_variation, '#d97706', '#fffbeb') }}
             </div>
 
             <!-- ── Charts Section ─────────────────────────────────────────────── -->
-            <div class="charts-section">
+            <div class="charts-section" id="charts-container">
 
                 <!-- Row 1 : Evolution + Donut Mix -->
                 <div class="chart-row chart-row-2" id="chart-evolution">
@@ -1139,8 +1176,10 @@
                                 <div class="chart-subtitle">Répartition volumes</div>
                             </div>
                             <div class="chart-tabs">
-                                <div class="ctab act" onclick="switchMix('n', this)">N (<span id="mix-yr-n">{{ kpis.current_year }}</span>)</div>
-                                <div class="ctab" onclick="switchMix('n1', this)">N-1 (<span id="mix-yr-n1">{{ kpis.previous_year }}</span>)</div>
+                                <div class="ctab act" onclick="switchMix('n', this)">N (<span id="mix-yr-n">{{
+                                        kpis.current_year }}</span>)</div>
+                                <div class="ctab" onclick="switchMix('n1', this)">N-1 (<span id="mix-yr-n1">{{
+                                        kpis.previous_year }}</span>)</div>
                             </div>
                         </div>
                         <div class="stat-pills">
@@ -1211,17 +1250,8 @@
                     </div>
                 </div>
 
-            </div>
+                </div>
 
-            <!-- Footer -->
-            <div class="page-footer fade-in">
-                <span class="foot-item">📅 Période : <span>{{ kpis.date_debut }} → {{ kpis.date_fin }}</span></span>
-                <span class="foot-item">🔢 Transactions : <span>{{ nb_rows }}</span></span>
-                <span class="foot-item">👥 Clients : <span>{{ kpis.nb_clients }}</span></span>
-                <span class="foot-item">🏢 Statuts : <span>{{ kpis.nb_statuts }}</span></span>
-                <span class="foot-item">📍 Source : <span>{{ mapping_source }}</span></span>
-                <span class="foot-item" style="margin-left:auto;color:#94a3b8;">SalamaIQ © 2024 — SMC Salama</span>
-            </div>
             {% endif %}
         </div>
     </div>
@@ -1240,11 +1270,13 @@
         const HEATMAP = {{ heatmap         | safe }};
         const SPREAD = {{ spread          | safe }};
         const PROFITABILITY = {{ profitability   | safe }};
-        const FILTERS = {{ filters_data    | safe }};
+                        const FILTERS = {{ filters_data    | safe }};
+        let SUPPLIER = {}; let PAYMENTS = {};
         const KPIS = {{ kpis | tojson | safe }};
         window.KPIS = KPIS;
 
         let chEvolution = null, chDonut = null, chTop10 = null, chSpread = null, chProfitability = null, chVolCol = null;
+        let chMargeFour = null, chPartAchat = null, chPrixAchat = null;
         let curMetric = 'ca', curVolCol = 'gasoil';
         window.curMixYear = 'n';
         let chatOpen = false;
@@ -1258,9 +1290,22 @@
 
         function updateDonutData() {
             if (!chDonut) return;
-            const k = window.KPIS;
+            const k = window.KPIS || {};
             let v = [], total = 0, labels = ['Gasoil', 'Super SP'];
+            const compareN1 = document.getElementById('f-compare-n1')?.checked || false;
             
+            // Masquer/Afficher l'onglet N-1
+            const tabN1 = document.querySelectorAll('#chart-mix .ctab')[1];
+            if (tabN1) {
+                tabN1.style.display = compareN1 ? 'inline-block' : 'none';
+            }
+
+            // Si N-1 est décoché et qu'on était sur l'onglet N-1, on force le retour à N
+            if (!compareN1 && window.curMixYear === 'n1') {
+                switchMix('n', document.querySelectorAll('#chart-mix .ctab')[0]);
+                return; 
+            }
+
             if (window.curMixYear === 'n') {
                 v = [k.volume_gasoil || 0, k.volume_super || 0];
                 total = k.volume_total || 0;
@@ -1270,11 +1315,11 @@
             }
 
             const pct = v.map(val => total > 0 ? (val / total * 100).toFixed(1) : 0);
-            
+
             chDonut.updateOptions({
                 series: v,
                 labels: labels,
-                tooltip: { y: { formatter: (val, {seriesIndex}) => `${fmtFR(val)} L (${pct[seriesIndex]}%)` } },
+                tooltip: { y: { formatter: (val, { seriesIndex }) => `${fmtFR(val)} L (${pct[seriesIndex]}%)` } },
                 plotOptions: { pie: { donut: { labels: { total: { formatter: () => fmtFR(total) + ' L' } } } } }
             });
             document.getElementById('mix-total').textContent = fmtFR(total);
@@ -1285,10 +1330,26 @@
             el.classList.add('act');
             const data = SPREAD[prod];
             if (chSpread) {
-                chSpread.updateSeries([
-                    { name: 'Prix Achat HT', data: data.achat },
-                    { name: 'Prix Vente HT', data: data.vente }
-                ]);
+                const compareN1 = document.getElementById('f-compare-n1')?.checked || false;
+                if (compareN1) {
+                    chSpread.updateOptions({
+                        colors: ['#e8321a', '#059669'],
+                        stroke: { curve: 'smooth', width: [3, 2.5], dashArray: [0, 4] },
+                        series: [
+                            { name: 'Marge Unitaire N', data: data.marge_n },
+                            { name: 'Marge Unitaire N-1', data: data.marge_n1 }
+                        ]
+                    });
+                } else {
+                    chSpread.updateOptions({
+                        colors: ['#475569', '#e8321a'],
+                        stroke: { curve: 'smooth', width: [2.5, 3], dashArray: [0, 0] },
+                        series: [
+                            { name: 'Prix Achat HT', data: data.achat },
+                            { name: 'Prix Vente HT', data: data.vente }
+                        ]
+                    });
+                }
             }
         }
 
@@ -1297,18 +1358,59 @@
             if (!el || !SPREAD) return;
             const options = {
                 chart: { type: 'area', height: 290, toolbar: { show: false }, zoom: { enabled: false }, fontFamily: 'Inter,sans-serif' },
-                colors: ['#64748b', '#2563eb'],
-                stroke: { curve: 'smooth', width: 2 },
+                colors: ['#475569', '#e8321a'],
+                stroke: { curve: 'smooth', width: [2.5, 3] },
                 series: [
                     { name: 'Prix Achat HT', data: SPREAD.gasoil.achat },
                     { name: 'Prix Vente HT', data: SPREAD.gasoil.vente }
                 ],
-                xaxis: { categories: SPREAD.labels, labels: T.label, axisBorder: { show: false } },
-                yaxis: { labels: { style: T.label.style, formatter: v => v.toFixed(2) + ' MAD' } },
-                grid: T.grid,
-                fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.3, opacityTo: 0.05 } },
-                tooltip: { theme: 'light', y: { formatter: v => v.toFixed(2) + ' MAD/L' } },
-                dataLabels: { enabled: false }
+                xaxis: { categories: SPREAD.labels, labels: { style: { colors: '#94a3b8', fontSize: '12px', fontFamily: 'Inter,sans-serif', fontWeight: 500 } }, axisBorder: { show: false }, axisTicks: { show: false } },
+                yaxis: { labels: { style: { colors: '#94a3b8', fontSize: '12px', fontFamily: 'Inter,sans-serif', fontWeight: 500 }, formatter: v => v.toFixed(2) + ' MAD' } },
+                grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: true } }, padding: { top: 10, right: 10, bottom: 0, left: 10 } },
+                fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.15, opacityTo: 0, stops: [0, 90, 100] } },
+                legend: { position: 'top', horizontalAlign: 'right', labels: { colors: '#475569', useSeriesColors: false }, markers: { width: 10, height: 10, radius: 5 } },
+                markers: { size: 0, hover: { size: 6, strokeWidth: 3, strokeColors: '#fff' } },
+                dataLabels: { enabled: false },
+                tooltip: { 
+                    custom: function({series, seriesIndex, dataPointIndex, w}) {
+                        const month = SPREAD.labels[dataPointIndex];
+                        const val0 = series[0][dataPointIndex] || 0;
+                        const val1 = series[1][dataPointIndex] || 0;
+                        const n0 = w.globals.seriesNames[0];
+                        const n1 = w.globals.seriesNames[1];
+                        const c0 = w.globals.colors[0];
+                        const c1 = w.globals.colors[1];
+                        
+                        let html = `<div style="padding:12px;font-family:Inter,sans-serif;min-width:200px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1)">`;
+                        html += `<div style="font-weight:700;color:#0f172a;margin-bottom:12px;font-size:14px">${month}</div>`;
+                        
+                        html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                                    <div style="display:flex;align-items:center;gap:6px">
+                                        <span style="width:8px;height:8px;border-radius:50%;background:${c1}"></span>
+                                        <span style="color:#475569;font-weight:600;font-size:13px">${n1}</span>
+                                    </div>
+                                    <span style="font-weight:700;color:#0f172a;font-size:13px">${val1.toFixed(2)} MAD</span>
+                                 </div>`;
+                                 
+                        html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                                    <div style="display:flex;align-items:center;gap:6px">
+                                        <span style="width:8px;height:8px;border-radius:50%;background:${c0}"></span>
+                                        <span style="color:#64748b;font-weight:500;font-size:13px">${n0}</span>
+                                    </div>
+                                    <span style="font-weight:600;color:#64748b;font-size:13px">${val0.toFixed(2)} MAD</span>
+                                 </div>`;
+                                 
+                        const diff = val1 - val0;
+                        const labelDiff = n0.includes('Achat') ? 'Marge' : 'Différence';
+                        
+                        html += `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px dashed #e2e8f0">
+                                    <span style="color:#64748b;font-size:12px;font-weight:500">${labelDiff}</span> 
+                                    <span style="font-weight:700;color:#059669;font-size:13px">+${Math.abs(diff).toFixed(2)} MAD</span>
+                                 </div>`;
+                        html += `</div>`;
+                        return html;
+                    }
+                }
             };
             if (chSpread) chSpread.destroy();
             chSpread = new ApexCharts(el, options);
@@ -1320,26 +1422,41 @@
             if (!el || !PROFITABILITY) return;
             const options = {
                 chart: { type: 'scatter', height: 290, toolbar: { show: false }, fontFamily: 'Inter,sans-serif' },
-                colors: ['#2563eb', '#7c3aed', '#059669', '#d97706', '#e8321a'],
+                colors: ['#e8321a', '#059669', '#3b82f6', '#f59e0b', '#8b5cf6', '#14b8a6', '#f43f5e', '#64748b', '#0ea5e9', '#d946ef'],
                 series: PROFITABILITY,
+                markers: { size: 8, strokeWidth: 2, strokeColors: '#ffffff', hover: { size: 10 } },
+                legend: { show: false }, // Hide legend to save space since we have too many clients
                 xaxis: {
-                    title: { text: 'Chiffre d\'Affaires (MAD)', style: { color: '#94a3b8', fontSize: '11px' } },
-                    labels: { style: T.label.style, formatter: v => (v / 1e6).toFixed(1) + 'M' }
+                    title: { text: 'Chiffre d\'Affaires (MAD)', style: { color: '#94a3b8', fontSize: '11px', fontWeight: 600 } },
+                    labels: { style: { colors: '#94a3b8', fontSize: '12px', fontWeight: 500 }, formatter: v => (v / 1e6).toFixed(1) + 'M' },
+                    axisBorder: { show: false }, axisTicks: { show: false }
                 },
                 yaxis: {
-                    title: { text: 'Marge HT (MAD)', style: { color: '#94a3b8', fontSize: '11px' } },
-                    labels: { style: T.label.style, formatter: v => (v / 1000).toFixed(0) + 'k' }
+                    title: { text: 'Marge HT (MAD)', style: { color: '#94a3b8', fontSize: '11px', fontWeight: 600 } },
+                    labels: { style: { colors: '#94a3b8', fontSize: '12px', fontWeight: 500 }, formatter: v => (v / 1000).toFixed(0) + 'k' }
                 },
-                grid: T.grid,
+                grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: true } }, padding: { top: 10, right: 10, bottom: 10, left: 10 } },
                 tooltip: {
-                    theme: 'light',
                     custom: function ({ series, seriesIndex, dataPointIndex, w }) {
                         const d = w.config.series[seriesIndex];
-                        return `<div style="padding:12px;font-family:Inter;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1)">
-                            <div style="font-weight:700;color:#1e293b;margin-bottom:6px;border-bottom:1px solid #f1f5f9;padding-bottom:4px;">${d.name}</div>
-                            <div style="font-size:11px;color:#64748b;margin-bottom:3px">CA: <b style="color:#1e293b">${fmtFR(d.data[0][0])} MAD</b></div>
-                            <div style="font-size:11px;color:#64748b;margin-bottom:3px">Marge: <b style="color:#059669">${fmtFR(d.data[0][1])} MAD</b></div>
-                            <div style="font-size:11px;color:#64748b">Vol. Total: <b style="color:#2563eb">${fmtFR(d.vol_total)} L</b></div>
+                        const color = w.globals.colors[seriesIndex];
+                        return `<div style="padding:14px;font-family:Inter,sans-serif;min-width:200px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1)">
+                            <div style="font-weight:700;color:#0f172a;margin-bottom:12px;font-size:14px;white-space:normal;line-height:1.3;display:flex;align-items:center;gap:8px">
+                                <span style="min-width:10px;height:10px;border-radius:50%;background:${color};display:inline-block"></span>
+                                ${d.name}
+                            </div>
+                            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+                                <span style="color:#64748b;font-size:12px;font-weight:500">Chiffre d'Affaires</span>
+                                <span style="color:#0f172a;font-size:13px;font-weight:700">${fmtFR(d.data[0][0])} MAD</span>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+                                <span style="color:#64748b;font-size:12px;font-weight:500">Marge HT</span>
+                                <span style="color:#059669;font-size:13px;font-weight:700">${fmtFR(d.data[0][1])} MAD</span>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px dashed #e2e8f0">
+                                <span style="color:#94a3b8;font-size:11px;font-weight:500">Volume Total</span>
+                                <span style="color:#64748b;font-size:12px;font-weight:600">${fmtFR(d.vol_total)} L</span>
+                            </div>
                         </div>`;
                     }
                 }
@@ -1348,6 +1465,9 @@
             chProfitability = new ApexCharts(el, options);
             chProfitability.render();
         }
+
+
+
 
         // ── Light theme for ApexCharts ──────────────────────────────────────────
         const T = {
@@ -1374,10 +1494,13 @@
         function buildEvol(metric) {
             const m = metricMap[metric];
             const dataObj = m.data() || {};
-            const years = Object.keys(dataObj).sort((a, b) => b - a); // Descending
+            let years = Object.keys(dataObj).sort((a, b) => b - a); // Descending
+            const compareN1 = document.getElementById('f-compare-n1')?.checked || false;
+            if (!compareN1) years = years.slice(0, 1);
+            else years = years.slice(0, 2);
 
             const series = [];
-            const colors = ['#e8321a', '#94a3b8', '#059669', '#f59e0b', '#3b82f6']; // Couleurs pour max 5 années
+            const colors = ['#e8321a', '#94a3b8', '#059669', '#f59e0b', '#3b82f6']; 
             const widths = [];
             const dashes = [];
 
@@ -1395,16 +1518,65 @@
 
             return {
                 chart: { type: 'area', height: 285, background: 'transparent', toolbar: { show: false }, fontFamily: 'Inter,sans-serif', animations: { speed: 400 } },
-                colors: colors.slice(0, series.length),
+                colors: ['#e8321a', '#059669', '#f59e0b', '#3b82f6'].slice(0, series.length),
                 series: series,
-                xaxis: { categories: MD.labels, labels: T.label },
-                yaxis: { labels: { ...T.label, formatter: fmt } },
-                grid: T.grid,
-                tooltip: { ...T.tooltip, y: { formatter: v => `${fmtFR(v)} ${m.unit}` } },
-                fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: .2, opacityTo: .02, stops: [0, 90, 100] } },
-                stroke: { curve: 'smooth', width: widths, dashArray: dashes },
-                legend: { labels: { colors: '#64748b' }, markers: { radius: 3 } },
-                markers: { size: 0, hover: { size: 5 } }
+                dataLabels: { enabled: false },
+                xaxis: { categories: MD.labels, labels: { style: { colors: '#94a3b8', fontSize: '12px', fontFamily: 'Inter,sans-serif', fontWeight: 500 } }, axisBorder: { show: false }, axisTicks: { show: false } },
+                yaxis: { labels: { style: { colors: '#94a3b8', fontSize: '12px', fontFamily: 'Inter,sans-serif', fontWeight: 500 }, formatter: fmt } },
+                grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: true } }, padding: { top: 10, right: 10, bottom: 0, left: 10 } },
+                tooltip: {
+                    ...T.tooltip,
+                    custom: function({series: sData, seriesIndex, dataPointIndex, w}) {
+                        const month = MD.labels[dataPointIndex];
+                        const valN = sData[0][dataPointIndex] || 0;
+                        const yrN = w.globals.seriesNames[0];
+                        
+                        let html = `<div style="padding:12px;font-family:Inter,sans-serif;min-width:200px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1)">`;
+                        html += `<div style="font-weight:700;color:#0f172a;margin-bottom:12px;font-size:14px">${month}</div>`;
+                        html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                                    <div style="display:flex;align-items:center;gap:6px">
+                                        <span style="width:8px;height:8px;border-radius:50%;background:#e8321a"></span>
+                                        <span style="color:#475569;font-weight:600;font-size:13px">${yrN}</span>
+                                    </div>
+                                    <span style="font-weight:700;color:#0f172a;font-size:13px">${fmtFR(valN)} ${m.unit}</span>
+                                 </div>`;
+                        
+                        if (sData.length > 1) {
+                            const valN1 = sData[1][dataPointIndex] || 0;
+                            const yrN1 = w.globals.seriesNames[1];
+                            const diff = valN - valN1;
+                            const diffColor = diff > 0 ? '#10b981' : (diff < 0 ? '#ef4444' : '#64748b');
+                            const sign = diff > 0 ? '+' : '';
+                            
+                            let evolStr = '0%';
+                            if (valN1 > 0) {
+                                const pct = (diff / valN1) * 100;
+                                evolStr = sign + pct.toFixed(1) + '%';
+                            } else if (valN > 0) {
+                                evolStr = '+100%';
+                            }
+                            
+                            html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                                        <div style="display:flex;align-items:center;gap:6px">
+                                            <span style="width:8px;height:8px;border-radius:50%;background:#059669"></span>
+                                            <span style="color:#64748b;font-weight:500;font-size:13px">${yrN1}</span>
+                                        </div>
+                                        <span style="font-weight:600;color:#64748b;font-size:13px">${fmtFR(valN1)} ${m.unit}</span>
+                                     </div>`;
+                            html += `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px dashed #e2e8f0">
+                                        <span style="color:#64748b;font-size:12px;font-weight:500">Évolution</span> 
+                                        <span style="font-weight:700;color:${diffColor};font-size:13px">${evolStr}</span>
+                                     </div>`;
+                        }
+                        
+                        html += `</div>`;
+                        return html;
+                    }
+                },
+                fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.15, opacityTo: 0, stops: [0, 90, 100] } },
+                stroke: { curve: 'smooth', width: [3, 2.5], dashArray: [0, 0] }, // No dashes, just clean solid lines
+                legend: { position: 'top', horizontalAlign: 'right', labels: { colors: '#475569', useSeriesColors: false }, markers: { width: 10, height: 10, radius: 5 } },
+                markers: { size: 0, hover: { size: 6, strokeWidth: 3, strokeColors: '#fff' } }
             };
         }
 
@@ -1425,23 +1597,38 @@
         function initDonut() {
             if (chDonut) chDonut.destroy();
             chDonut = new ApexCharts(document.getElementById('apex-donut'), {
-                chart: { type: 'donut', height: 250, background: 'transparent', fontFamily: 'Inter,sans-serif' },
+                chart: { type: 'donut', height: 260, background: 'transparent', fontFamily: 'Inter,sans-serif' },
                 series: [],
                 labels: ['Gasoil', 'Super SP'],
-                colors: ['#2563eb', '#d97706'],
-                dataLabels: { enabled: true, style: { fontSize: '12px', fontFamily: 'Inter,sans-serif', fontWeight: '700' } },
-                legend: { position: 'bottom', labels: { colors: '#64748b' } },
+                colors: ['#eab308', '#f97316'],
+                dataLabels: { enabled: false }, // Turn off inside labels for cleaner look
+                stroke: { show: true, width: 6, colors: ['#ffffff'] },
+                legend: { position: 'bottom', labels: { colors: '#475569', useSeriesColors: false }, markers: { width: 12, height: 12, radius: 4 } },
                 plotOptions: {
                     pie: {
                         donut: {
-                            size: '68%', labels: {
+                            size: '72%', labels: {
                                 show: true,
-                                total: { show: true, label: 'Total', color: '#94a3b8', fontSize: '11px', formatter: w => fmtFR(w.globals.seriesTotals.reduce((a, b) => a + b, 0)) + ' L' }
+                                name: { show: true, fontSize: '13px', color: '#94a3b8', fontWeight: 500 },
+                                value: { show: true, fontSize: '20px', color: '#0f172a', fontWeight: 700, formatter: v => fmtFR(parseInt(v)) + ' L' },
+                                total: { show: true, label: 'Total', color: '#94a3b8', fontSize: '13px', fontWeight: 500, formatter: w => fmtFR(w.globals.seriesTotals.reduce((a, b) => a + b, 0)) + ' L' }
                             }
                         }
                     }
                 },
-                tooltip: { ...T.tooltip }
+                tooltip: {
+                    theme: 'dark',
+                    custom: function({series, seriesIndex, dataPointIndex, w}) {
+                        const name = w.globals.labels[seriesIndex];
+                        const val = series[seriesIndex];
+                        const total = series.reduce((a, b) => a + b, 0);
+                        const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                        return `<div style="padding:14px;background:#0f172a;color:#fff;border-radius:10px;font-family:Inter,sans-serif;box-shadow:0 10px 15px -3px rgba(0,0,0,0.2)">
+                                    <div style="font-size:22px;font-weight:700;margin-bottom:4px;line-height:1">${pct}%</div>
+                                    <div style="font-size:13px;color:#94a3b8;font-weight:500">${name} (${fmtFR(val)} L)</div>
+                                </div>`;
+                    }
+                }
             });
             chDonut.render();
             updateDonutData();
@@ -1449,6 +1636,41 @@
 
         // ── Chart 3 : Évolution Volumes (Column Chart) ───────────────────────────
 
+
+        function renderCharts() {
+            if (chEvolution) chEvolution.updateOptions(buildEvol(curMetric));
+            if (chVolCol) chVolCol.updateOptions(buildVolCol(curVolCol));
+            if (chTop10) initTop10(); // Refresh Top 10 to hide/show delta
+            
+            const compareN1 = document.getElementById('f-compare-n1')?.checked || false;
+            
+            if (window.KPIS) {
+                const ks = window.KPIS;
+                
+                // Update subtitles
+                const yn1_html = ks.previous_year ? ` vs N-1 (<span id="yr-n1">${ks.previous_year}</span>)` : '';
+                const evolSub = document.querySelector('#chart-evolution .chart-subtitle');
+                if (evolSub) evolSub.innerHTML = `N (<span id="yr-n">${ks.current_year}</span>)${compareN1 ? yn1_html : ''}`;
+                
+                const mix_yn1_html = ks.previous_year ? ` vs N-1 (<span id="mix-yr-n1">${ks.previous_year}</span>)` : '';
+                const mixSub = document.querySelector('#chart-mix .chart-subtitle');
+                if (mixSub) mixSub.innerHTML = `N (<span id="mix-yr-n">${ks.current_year}</span>)${compareN1 ? mix_yn1_html : ''}`;
+                
+                const unitMap = { 'kpi-ca': 'MAD', 'kpi-marge': 'MAD', 'kpi-vol': 'L', 'kpi-go': 'L', 'kpi-sp': 'L' };
+                ['kpi-ca', 'kpi-marge', 'kpi-vol', 'kpi-go', 'kpi-sp'].forEach(id => {
+                    const keyBase = id.replace('kpi-', '').replace('ca', 'ca_total').replace('vol', 'volume_total');
+                    let valKey = keyBase, n1Key = keyBase + '_n1', varKey = keyBase.replace('volume_total', 'vol_total').replace('volume_gasoil', 'vol_gasoil').replace('volume_super', 'vol_super') + '_variation';
+                    
+                    if (id === 'kpi-marge') { valKey = 'marge_ht'; n1Key = 'marge_ht_n1'; varKey = 'marge_variation'; } 
+                    else if (id === 'kpi-ca') { varKey = 'ca_variation'; } 
+                    else if (id === 'kpi-go') { valKey = 'volume_gasoil'; n1Key = 'volume_gasoil_n1'; varKey = 'vol_gasoil_variation'; } 
+                    else if (id === 'kpi-sp') { valKey = 'volume_super'; n1Key = 'volume_super_n1'; varKey = 'vol_super_variation'; }
+                    
+                    upKPI(id, ks[valKey], ks[n1Key], ks[varKey], unitMap[id]);
+                });
+            }
+            if (typeof updateDonutData === 'function') updateDonutData();
+        }
 
         function buildVolCol(metric) {
             // metric = 'gasoil' | 'super' | 'total'
@@ -1474,7 +1696,11 @@
                 lbl = 'Volume Total';
             }
 
-            const years = Object.keys(dataObj).sort((a, b) => b - a);
+            let years = Object.keys(dataObj).sort((a, b) => b - a);
+            const compareN1 = document.getElementById('f-compare-n1')?.checked || false;
+            if (!compareN1) years = years.slice(0, 1);
+            else years = years.slice(0, 2);
+
             const barColors = ['#2563eb', '#94a3b8', '#059669', '#f59e0b', '#e8321a'];
 
             const series = years.map((yr, idx) => ({
@@ -1495,21 +1721,68 @@
                     fontFamily: 'Inter,sans-serif',
                     animations: { speed: 400 }
                 },
-                colors: barColors.slice(0, series.length),
+                colors: ['#eab308', '#fef08a', '#f97316', '#fdba74'].slice(0, series.length),
                 series: series,
-                xaxis: { categories: MD.labels, labels: T.label },
-                yaxis: { labels: { ...T.label, formatter: v => fmtFR(v) + ' L' } },
-                grid: T.grid,
+                xaxis: { categories: MD.labels, labels: { style: { colors: '#94a3b8', fontSize: '12px', fontFamily: 'Inter,sans-serif', fontWeight: 500 } }, axisBorder: { show: false }, axisTicks: { show: false } },
+                yaxis: { labels: { style: { colors: '#94a3b8', fontSize: '12px', fontFamily: 'Inter,sans-serif', fontWeight: 500 }, formatter: v => fmtFR(v) + ' L' } },
+                grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: false } }, yaxis: { lines: { show: true } }, padding: { top: 10, right: 10, bottom: 0, left: 10 } },
                 plotOptions: {
                     bar: {
-                        borderRadius: 4,
-                        columnWidth: years.length > 1 ? '65%' : '40%',
-                        dataLabels: { position: 'top' }
+                        borderRadius: 6,
+                        borderRadiusApplication: 'end',
+                        columnWidth: years.length > 1 ? '55%' : '35%',
                     }
                 },
                 dataLabels: { enabled: false },
-                tooltip: { ...T.tooltip, y: { formatter: v => `${fmtFR(v)} ${unit}` } },
-                legend: { labels: { colors: '#64748b' }, markers: { radius: 3 } }
+                tooltip: {
+                    custom: function({series: sData, seriesIndex, dataPointIndex, w}) {
+                        const month = MD.labels[dataPointIndex];
+                        const valN = sData[0][dataPointIndex] || 0;
+                        const yrN = w.globals.seriesNames[0];
+                        
+                        let html = `<div style="padding:12px;font-family:Inter,sans-serif;min-width:200px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1)">`;
+                        html += `<div style="font-weight:700;color:#0f172a;margin-bottom:12px;font-size:14px">${month}</div>`;
+                        html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                                    <div style="display:flex;align-items:center;gap:6px">
+                                        <span style="width:8px;height:8px;border-radius:50%;background:${w.globals.colors[seriesIndex]}"></span>
+                                        <span style="color:#475569;font-weight:600;font-size:13px">${yrN}</span>
+                                    </div>
+                                    <span style="font-weight:700;color:#0f172a;font-size:13px">${fmtFR(valN)} ${unit}</span>
+                                 </div>`;
+                        
+                        if (sData.length > 1) {
+                            const valN1 = sData[1][dataPointIndex] || 0;
+                            const yrN1 = w.globals.seriesNames[1];
+                            const diff = valN - valN1;
+                            const diffColor = diff > 0 ? '#10b981' : (diff < 0 ? '#ef4444' : '#64748b');
+                            const sign = diff > 0 ? '+' : '';
+                            
+                            let evolStr = '0%';
+                            if (valN1 > 0) {
+                                const pct = (diff / valN1) * 100;
+                                evolStr = sign + pct.toFixed(1) + '%';
+                            } else if (valN > 0) {
+                                evolStr = '+100%';
+                            }
+                            
+                            html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                                        <div style="display:flex;align-items:center;gap:6px">
+                                            <span style="width:8px;height:8px;border-radius:50%;background:${w.globals.colors[1]}"></span>
+                                            <span style="color:#64748b;font-weight:500;font-size:13px">${yrN1}</span>
+                                        </div>
+                                        <span style="font-weight:600;color:#64748b;font-size:13px">${fmtFR(valN1)} ${unit}</span>
+                                     </div>`;
+                            html += `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px dashed #e2e8f0">
+                                        <span style="color:#64748b;font-size:12px;font-weight:500">Évolution</span> 
+                                        <span style="font-weight:700;color:${diffColor};font-size:13px">${evolStr}</span>
+                                     </div>`;
+                        }
+                        
+                        html += `</div>`;
+                        return html;
+                    }
+                },
+                legend: { position: 'top', horizontalAlign: 'right', labels: { colors: '#475569', useSeriesColors: false }, markers: { width: 10, height: 10, radius: 5 } }
             };
         }
 
@@ -1528,160 +1801,249 @@
 
         // ── Chart 4 : Top 10 Clients ─────────────────────────────────────────────
         function initTop10() {
-            const el = document.getElementById('apex-top10');
+            const el = document.querySelector("#apex-top10");
+            if (!el) return;
+            el.innerHTML = '';
+            
+            const compareN1 = document.getElementById('f-compare-n1')?.checked || false;
+            
             if (!TOP10 || !TOP10.length) {
                 el.innerHTML = '<div style="color:#94a3b8;font-size:13px;padding:40px;text-align:center">Données clients insuffisantes</div>';
                 return;
             }
-            if (chTop10) chTop10.destroy();
-            const labels = [...TOP10].reverse().map(d => d.client);
-            const vals = [...TOP10].reverse().map(d => d.ca);
+            const seriesData = [...TOP10].reverse().map(d => ({ x: d.client, y: d.ca, variation: d.ca_variation, caN1: d.ca_n1 }));
+            
             chTop10 = new ApexCharts(el, {
-                chart: { type: 'bar', height: Math.max(300, labels.length * 38), background: 'transparent', toolbar: { show: false }, fontFamily: 'Inter,sans-serif' },
-                plotOptions: { bar: { horizontal: true, borderRadius: 6, dataLabels: { position: 'top' } } },
-                series: [{ name: 'CA Total', data: vals }],
-                xaxis: { labels: { ...T.label, formatter: fmt } },
-                yaxis: { labels: { style: { colors: '#334155', fontSize: '12px', fontWeight: '500' } } },
-                grid: T.grid,
-                colors: ['#e8321a'],
-                fill: { type: 'gradient', gradient: { shade: 'light', type: 'horizontal', gradientToColors: ['#ff6b4a'], shadeIntensity: .5 } },
-                tooltip: {
-                    ...T.tooltip,
-                    custom: ({ dataPointIndex }) => {
-                        const c = TOP10[TOP10.length - 1 - dataPointIndex];
-                        return `<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;font-size:12px;color:#334155;font-family:Inter,sans-serif;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1)">
-                        <div style="font-weight:700;color:#e8321a;margin-bottom:6px">${c.client}</div>
-                        <div style="margin-bottom:3px">CA : <strong>${fmtFR(c.ca)} MAD</strong></div>
-                        ${c.marge ? `<div style="margin-bottom:3px">Marge : <strong>${fmtFR(c.marge)} MAD</strong></div>` : ''}
-                        ${c.volume_gasoil ? `<div>Gasoil : <strong>${fmtFR(c.volume_gasoil)} L</strong></div>` : ''}
-                    </div>`;
-                    }
+                chart: { type: 'bar', height: Math.max(300, seriesData.length * 42), background: 'transparent', toolbar: { show: false }, fontFamily: 'Inter,sans-serif' },
+                plotOptions: { 
+                    bar: { 
+                        horizontal: true, 
+                        borderRadius: 6,
+                        borderRadiusApplication: 'end',
+                        barHeight: '45%',
+                        dataLabels: { position: 'top' }
+                    } 
                 },
-                dataLabels: { enabled: true, formatter: fmt, style: { colors: ['#94a3b8'], fontSize: '10px' }, offsetX: 6 }
+                colors: ['#e8321a'],
+                dataLabels: { 
+                    enabled: true, 
+                    textAnchor: 'start',
+                    formatter: function(val) {
+                        if (!val) return '';
+                        return val >= 1e6 ? (val/1000000).toFixed(2) + ' M' : (val/1000).toFixed(0) + ' K';
+                    },
+                    style: { colors: ['#475569'], fontSize: '12px', fontWeight: 600, fontFamily: 'Inter,sans-serif' },
+                    offsetX: 5,
+                    dropShadow: { enabled: false }
+                },
+                series: [
+                    { name: 'CA', data: seriesData }
+                ],
+                xaxis: { labels: { style: { colors: '#94a3b8', fontSize: '11px', fontFamily: 'Inter,sans-serif' }, formatter: v => (v/1000000).toFixed(1) + 'M' }, axisBorder: { show: false }, axisTicks: { show: false } },
+                yaxis: { labels: { maxWidth: 160, style: { colors: '#64748b', fontSize: '12px', fontWeight: 500, fontFamily: 'Inter,sans-serif' } } },
+                grid: { borderColor: '#f1f5f9', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+                fill: { type: 'solid', opacity: 1 },
+                tooltip: { 
+                    custom: function({series, seriesIndex, dataPointIndex, w}) {
+                        const d = seriesData[dataPointIndex];
+                        const val = d.y;
+                        const clientName = d.x;
+                        
+                        let html = `<div style="padding:12px;font-family:Inter,sans-serif;min-width:220px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1)">`;
+                        html += `<div style="font-weight:700;color:#0f172a;margin-bottom:12px;font-size:14px;white-space:normal;line-height:1.3">${clientName}</div>`;
+                        html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                                    <div style="display:flex;align-items:center;gap:6px">
+                                        <span style="width:8px;height:8px;border-radius:50%;background:#e8321a"></span>
+                                        <span style="color:#475569;font-weight:600;font-size:13px">CA (N)</span>
+                                    </div>
+                                    <span style="font-weight:700;color:#0f172a;font-size:13px">${fmtFR(val)} MAD</span>
+                                 </div>`;
+                                 
+                        if (compareN1 && d.variation !== null && d.variation !== undefined) {
+                            const diffColor = d.variation > 0 ? '#10b981' : (d.variation < 0 ? '#ef4444' : '#64748b');
+                            const sign = d.variation > 0 ? '+' : '';
+                            
+                            html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                                        <div style="display:flex;align-items:center;gap:6px">
+                                            <span style="width:8px;height:8px;border-radius:50%;background:#059669"></span>
+                                            <span style="color:#64748b;font-weight:500;font-size:13px">CA (N-1)</span>
+                                        </div>
+                                        <span style="font-weight:600;color:#64748b;font-size:13px">${fmtFR(d.caN1)} MAD</span>
+                                     </div>`;
+                            html += `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px dashed #e2e8f0">
+                                        <span style="color:#64748b;font-size:12px;font-weight:500">Évolution</span> 
+                                        <span style="font-weight:700;color:${diffColor};font-size:13px">${sign}${d.variation.toFixed(1)}%</span>
+                                     </div>`;
+                        }
+                        
+                        html += `</div>`;
+                        return html;
+                    }
+                }
             });
             chTop10.render();
         }
 
-        // ── Filters ──────────────────────────────────────────────────────────────
+        // ── Filters (rewritten from scratch) ─────────────────────────────────────
         function populateFilters() {
+            const fy = document.getElementById('f-year');
             const fs = document.getElementById('f-statut');
             const fc = document.getElementById('f-client');
-            const fy = document.getElementById('f-year-list');
 
-            FILTERS.statuts.forEach(f => { const o = document.createElement('option'); o.value = o.textContent = f; fs.appendChild(o); });
-            FILTERS.clients.forEach(c => { const o = document.createElement('option'); o.value = o.textContent = c; fc.appendChild(o); });
-
-            if (fy) {
+            // Années
+            if (fy && FILTERS.years && FILTERS.years.length > 0) {
                 fy.innerHTML = '';
                 FILTERS.years.forEach(y => {
-                    const label = document.createElement('label');
-                    label.style = "display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;cursor:pointer;padding:4px 10px;border-radius:6px;white-space:nowrap;background:#f1f5f9;border:1px solid #e2e8f0;transition:all 0.2s;";
-                    label.innerHTML = `<input type="checkbox" class="year-check" value="${y}" onchange="applyFilters()"> ${y}`;
-                    fy.appendChild(label);
+                    const o = document.createElement('option');
+                    o.value = y; o.textContent = y;
+                    fy.appendChild(o);
                 });
             }
-            if (FILTERS.date_min) document.getElementById('f-date-from').value = FILTERS.date_min;
-            if (FILTERS.date_max) document.getElementById('f-date-to').value = FILTERS.date_max;
+
+            // Statuts
+            if (fs && FILTERS.statuts && FILTERS.statuts.length > 0) {
+                fs.innerHTML = '<option value="">Tous statuts</option>';
+                FILTERS.statuts.forEach(s => {
+                    const o = document.createElement('option');
+                    o.value = s; o.textContent = s;
+                    fs.appendChild(o);
+                });
+            }
+
+            // Clients
+            if (fc && FILTERS.clients && FILTERS.clients.length > 0) {
+                fc.innerHTML = '<option value="">Tous clients</option>';
+                FILTERS.clients.forEach(c => {
+                    const o = document.createElement('option');
+                    o.value = c; o.textContent = c;
+                    fc.appendChild(o);
+                });
+            }
+
+            // Brancher les événements
+            if (fy) fy.addEventListener('change', applyFilters);
+            if (fs) fs.addEventListener('change', applyFilters);
+            if (fc) fc.addEventListener('change', applyFilters);
+
+            console.log('[Filters] Populated:', FILTERS);
         }
 
-        let filterTimer = null;
-        function applyFilters() {
-            clearTimeout(filterTimer);
-            filterTimer = setTimeout(async () => {
-                const sv = document.getElementById('f-statut').value;
-                const cv = document.getElementById('f-client').value;
-                const years = Array.from(document.querySelectorAll('.year-check:checked')).map(cb => cb.value);
-                const df = document.getElementById('f-date-from').value;
-                const dt = document.getElementById('f-date-to').value;
+        async function applyFilters() {
+            // 1. Lire les valeurs
+            const year   = document.getElementById('f-year')?.value   || '';
+            const statut = document.getElementById('f-statut')?.value || '';
+            const client = document.getElementById('f-client')?.value || '';
 
-                const p = new URLSearchParams({ session_id: SID });
-                if (sv) p.append('statut', sv);
-                if (cv) p.append('client', cv);
-                if (df) p.append('date_from', df);
-                if (dt) p.append('date_to', dt);
-                years.forEach(y => p.append('years', y));
+            console.log('[Filters] Applying:', { year, statut, client });
 
-                try {
-                    const res = await fetch(`/api/filtered-data?${p}`);
-                    const data = await res.json();
-                    if (data.error) return;
+            // 2. Construire l'URL
+            const p = new URLSearchParams({ session_id: SID });
+            if (year)   p.append('years', year);
+            if (statut) p.append('statut', statut);
+            if (client) p.append('client', client);
 
-                    const ks = data.kpis || {};
-                    window.KPIS = ks; // CRITICAL: Update global KPIS object
-                    const unitMap = { 'kpi-ca': 'MAD', 'kpi-marge': 'MAD', 'kpi-vol': 'L', 'kpi-go': 'L', 'kpi-sp': 'L' };
+            // 3. Loading state
+            document.querySelectorAll('.kpi-card, .chart-card').forEach(el => el.style.opacity = '0.5');
 
-                    ['kpi-ca', 'kpi-marge', 'kpi-vol', 'kpi-go', 'kpi-sp'].forEach(id => {
-                        const keyBase = id.replace('kpi-', '').replace('ca', 'ca_total').replace('vol', 'volume_total');
-                        // Mapper les clés du backend aux IDs du frontend
-                        let valKey = keyBase;
-                        let n1Key = keyBase + '_n1';
-                        let varKey = keyBase.replace('volume_total', 'vol_total').replace('volume_gasoil', 'vol_gasoil').replace('volume_super', 'vol_super') + '_variation';
+            try {
+                const url = `/api/activite-data?${p.toString()}`;
+                console.log('[Filters] Fetching:', url);
+                const res = await fetch(url);
+                const data = await res.json();
+                console.log('[Filters] Response:', data);
 
-                        // Cas particuliers
-                        if (id === 'kpi-marge') {
-                            valKey = 'marge_ht';
-                            n1Key = 'marge_ht_n1';
-                            varKey = 'marge_variation';
-                        } else if (id === 'kpi-ca') {
-                            varKey = 'ca_variation';
-                        } else if (id === 'kpi-go') {
-                            valKey = 'volume_gasoil';
-                            n1Key = 'volume_gasoil_n1';
-                            varKey = 'vol_gasoil_variation';
-                        } else if (id === 'kpi-sp') {
-                            valKey = 'volume_super';
-                            n1Key = 'volume_super_n1';
-                            varKey = 'vol_super_variation';
-                        }
+                // 4. Retirer l'opacité
+                document.querySelectorAll('.kpi-card, .chart-card').forEach(el => el.style.opacity = '1');
 
-                        upKPI(id, ks[valKey], ks[n1Key], ks[varKey], unitMap[id]);
-                    });
+                // 5. Gérer erreur
+                if (data.error) {
+                    console.warn('[Filters] Error from API:', data.error);
+                    showEmptyState(true);
+                    return;
+                }
 
-                    // Update labels N vs N-1
-                    if (ks.current_year) document.getElementById('yr-n').textContent = ks.current_year;
-                    if (ks.previous_year) document.getElementById('yr-n1').textContent = ks.previous_year;
+                showEmptyState(false);
 
-                    if (data.monthly_series) {
-                        Object.assign(MD, data.monthly_series);
-                        if (chEvolution) chEvolution.updateOptions(buildEvol(curMetric));
-                        if (chVolCol) chVolCol.updateOptions(buildVolCol(curVolCol));
+                // 6. Mettre à jour les KPIs
+                const ks = data.kpis || {};
+                window.KPIS = ks;
+
+                // Mettre à jour les labels année
+                const yrN  = document.getElementById('yr-n');
+                const yrN1 = document.getElementById('yr-n1');
+                const mixN  = document.getElementById('mix-yr-n');
+                const mixN1 = document.getElementById('mix-yr-n1');
+                if (yrN  && ks.current_year)  yrN.textContent  = ks.current_year;
+                if (yrN1 && ks.previous_year) yrN1.textContent = ks.previous_year;
+                if (mixN  && ks.current_year)  mixN.textContent  = ks.current_year;
+                if (mixN1 && ks.previous_year) mixN1.textContent = ks.previous_year;
+
+                // Mettre à jour chaque KPI
+                upKPI('kpi-ca',    ks.ca_total,       ks.ca_total_n1,      ks.ca_variation,           'MAD');
+                upKPI('kpi-marge', ks.marge_ht,       ks.marge_ht_n1,      ks.marge_variation,        'MAD');
+                upKPI('kpi-vol',   ks.volume_total,   ks.volume_total_n1,  ks.vol_total_variation,    'L');
+                upKPI('kpi-go',    ks.volume_gasoil,  ks.volume_gasoil_n1, ks.vol_gasoil_variation,   'L');
+                upKPI('kpi-sp',    ks.volume_super,   ks.volume_super_n1,  ks.vol_super_variation,    'L');
+
+                // 7. Mettre à jour les graphiques
+                if (data.monthly_series) {
+                    for (let k in MD) delete MD[k];
+                    Object.assign(MD, data.monthly_series);
+                    if (chEvolution) chEvolution.updateOptions(buildEvol(curMetric));
+                    if (chVolCol)    chVolCol.updateOptions(buildVolCol(curVolCol));
+                }
+
+                if (data.top10_clients) {
+                    TOP10.length = 0;
+                    TOP10.push(...data.top10_clients);
+                    initTop10();
+                }
+
+                if (data.spread) {
+                    for (let k in SPREAD) delete SPREAD[k];
+                    Object.assign(SPREAD, data.spread);
+                    const curTabEl = document.querySelector('#chart-spread .ctab.act');
+                    if (curTabEl) {
+                        const curTab = curTabEl.textContent.toLowerCase();
+                        switchSpread(curTab === 'gasoil' ? 'gasoil' : 'super', curTabEl);
                     }
-                    if (data.top10_clients) {
-                        TOP10.length = 0;
-                        TOP10.push(...data.top10_clients);
-                        initTop10();
+                }
+
+                if (data.profitability) {
+                    PROFITABILITY.length = 0;
+                    PROFITABILITY.push(...data.profitability);
+                    initProfitability();
+                }
+
+                if (data.product_mix) {
+                    for (let k in PMIX) delete PMIX[k];
+                    Object.assign(PMIX, data.product_mix);
+                    if (chDonut) {
+                        updateDonutData();
+                    } else {
+                        initDonut();
                     }
-                    if (data.spread) {
-                        Object.assign(SPREAD, data.spread);
-                        const curTab = document.querySelector('#chart-spread .ctab.act').textContent.toLowerCase();
-                        switchSpread(curTab === 'gasoil' ? 'gasoil' : 'super', document.querySelector('#chart-spread .ctab.act'));
-                    }
-                    if (data.profitability) {
-                        PROFITABILITY.length = 0;
-                        PROFITABILITY.push(...data.profitability);
-                        initProfitability();
-                    }
-                    if (data.product_mix) {
-                        Object.assign(PMIX, data.product_mix);
-                        if (chDonut) {
-                            updateDonutData();
-                        } else {
-                            initDonut();
-                        }
-                    }
-                } catch (e) { console.error('Filter error', e); }
-            }, 500);
+                }
+
+                // 8. Re-render les sous-titres
+                renderCharts();
+
+            } catch (e) {
+                console.error('[Filters] Fetch error:', e);
+                document.querySelectorAll('.kpi-card, .chart-card').forEach(el => el.style.opacity = '1');
+            }
         }
 
         function upKPI(id, v, n1, delta, unit) {
-            const elV = document.getElementById(id);
+            const elV  = document.getElementById(id);
             const elN1 = document.getElementById(id + '-n1');
-            const elD = document.getElementById(id + '-delta');
+            const elD  = document.getElementById(id + '-delta');
+            const compareN1 = document.getElementById('f-compare-n1')?.checked ?? false;
 
-            if (elV && v !== undefined) elV.textContent = fmtFR(v);
+            if (elV && v !== undefined && v !== null) elV.textContent = fmtFR(v);
 
             if (elN1) {
-                if (n1 > 0) {
+                if (n1 > 0 && compareN1) {
                     elN1.textContent = `N-1 : ${fmtFR(n1)} ${unit}`;
                     elN1.style.display = 'block';
                 } else {
@@ -1690,7 +2052,7 @@
             }
 
             if (elD) {
-                if (delta !== null && delta !== undefined) {
+                if (delta !== null && delta !== undefined && compareN1) {
                     elD.textContent = (delta > 0 ? '+' : '') + delta.toFixed(1) + '%';
                     elD.className = 'delta ' + (delta > 0 ? 'delta-up' : (delta < 0 ? 'delta-dn' : 'delta-eq'));
                     elD.style.display = 'inline-block';
@@ -1701,19 +2063,49 @@
         }
 
         function resetFilters() {
-            document.getElementById('f-statut').value = '';
-            document.getElementById('f-client').value = '';
-            document.querySelectorAll('.year-check').forEach(cb => cb.checked = false);
-            document.getElementById('f-date-from').value = FILTERS.date_min;
-            document.getElementById('f-date-to').value = FILTERS.date_max;
+            const fy = document.getElementById('f-year');
+            const fs = document.getElementById('f-statut');
+            const fc = document.getElementById('f-client');
+            const cn = document.getElementById('f-compare-n1');
+            if (fy) fy.value = '';
+            if (fs) fs.value = '';
+            if (fc) fc.value = '';
+            if (cn) cn.checked = true;
+            console.log('[Filters] Reset');
             applyFilters();
         }
 
+        function showEmptyState(show) {
+            let el = document.getElementById('empty-state-overlay');
+            if (show) {
+                if (!el) {
+                    el = document.createElement('div');
+                    el.id = 'empty-state-overlay';
+                    el.innerHTML = `
+                        <div style="text-align:center;padding:40px;background:#ffffff;border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,0.05);max-width:400px;margin:40px auto;">
+                            <div style="font-size:48px;margin-bottom:16px;">📭</div>
+                            <div style="font-weight:700;font-size:18px;color:#0f172a;margin-bottom:8px;">Aucune transaction trouvée</div>
+                            <div style="font-size:14px;color:#64748b;">Modifiez vos filtres pour voir les résultats.</div>
+                        </div>
+                    `;
+                    document.getElementById('kpi-section').parentNode.insertBefore(el, document.getElementById('kpi-section'));
+                }
+                el.style.display = 'block';
+                document.getElementById('kpi-section').style.display = 'none';
+                const cc = document.getElementById('charts-container');
+                if (cc) cc.style.display = 'none';
+            } else {
+                if (el) el.style.display = 'none';
+                document.getElementById('kpi-section').style.display = 'grid';
+                const cc = document.getElementById('charts-container');
+                if (cc) cc.style.display = 'block';
+            }
+        }
 
         // ── KPI Counter Animation ─────────────────────────────────────────────────
         function animateCounters() {
             document.querySelectorAll('.kpi-value').forEach(el => {
-                const txt = el.textContent.replace(/\s/g, '').replace(',', '');
+                const txt = el.textContent.replace(/[\s\u202F\xA0]/g, '').replace(/,/g, '');
                 const target = parseFloat(txt);
                 if (!target || isNaN(target)) return;
                 let start = null;
@@ -1776,6 +2168,7 @@
             initTop10();
             initSpread();
             initProfitability();
+            renderPayments();
             animateCounters();
 
 
@@ -1784,20 +2177,36 @@
 
     <script>
         function exportPDF() {
-            const sv = document.getElementById('f-statut').value;
-            const cv = document.getElementById('f-client').value;
-            const years = Array.from(document.querySelectorAll('.year-check:checked')).map(cb => cb.value);
-            const df = document.getElementById('f-date-from').value;
-            const dt = document.getElementById('f-date-to').value;
+            const sv = document.getElementById('f-statut')?.value;
+            const cv = document.getElementById('f-client')?.value;
+            const yv = document.getElementById('f-year')?.value;
+            const compareCheckbox = document.getElementById('f-compare-n1');
+            const compare = (compareCheckbox && compareCheckbox.checked) ? '1' : '0';
 
             const p = new URLSearchParams({ session_id: SID });
             if (sv) p.append('statut', sv);
             if (cv) p.append('client', cv);
-            if (df) p.append('date_from', df);
-            if (dt) p.append('date_to', dt);
-            years.forEach(y => p.append('years', y));
+            if (yv) p.append('years', yv);
+            p.append('compare', compare);
 
             const url = `/api/generate-client-pdf?${p.toString()}`;
+            window.location.href = url;
+        }
+
+        function exportExcel() {
+            const sv = document.getElementById('f-statut')?.value;
+            const cv = document.getElementById('f-client')?.value;
+            const yv = document.getElementById('f-year')?.value;
+            const compareCheckbox = document.getElementById('f-compare-n1');
+            const compare = (compareCheckbox && compareCheckbox.checked) ? '1' : '0';
+
+            const p = new URLSearchParams({ session_id: SID });
+            if (sv) p.append('statut', sv);
+            if (cv) p.append('client', cv);
+            if (yv) p.append('years', yv);
+            p.append('compare', compare);
+
+            const url = `/api/generate-excel?${p.toString()}`;
             window.location.href = url;
         }
     </script>
@@ -1822,6 +2231,82 @@
                 <div id="tx-loading" class="text-center py-10" style="color:#94a3b8;">Chargement des transactions...
                 </div>
                 <table id="tx-table" class="display w-full hidden" style="width:100%"></table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal Détail Paiement (par tiers) ── -->
+    <div id="paydetail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center"
+        style="background:rgba(15,23,42,0.5);">
+        <div class="modal-box w-full max-w-xl mx-4" style="max-height:92vh;overflow:auto;">
+            <div class="modal-header">
+                <div>
+                    <h3 id="pd-title">—</h3>
+                    <p id="pd-sub">—</p>
+                </div>
+                <button onclick="closePayDetail()" class="modal-close">Fermer</button>
+            </div>
+            <div style="padding:20px;">
+                <!-- Résumé -->
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;">
+                    <div style="background:#f8fafc;border-radius:10px;padding:12px;text-align:center;">
+                        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;" id="pd-lbl-facture">Facturé</div>
+                        <div style="font-size:16px;font-weight:800;color:#0f172a;margin-top:4px;" id="pd-facture">—</div>
+                    </div>
+                    <div style="background:#ecfdf5;border-radius:10px;padding:12px;text-align:center;">
+                        <div style="font-size:11px;color:#047857;font-weight:700;text-transform:uppercase;">Réglé</div>
+                        <div style="font-size:16px;font-weight:800;color:#047857;margin-top:4px;" id="pd-regle">—</div>
+                    </div>
+                    <div style="background:#fef2f2;border-radius:10px;padding:12px;text-align:center;">
+                        <div style="font-size:11px;color:#b91c1c;font-weight:700;text-transform:uppercase;">Reste</div>
+                        <div style="font-size:16px;font-weight:800;color:#b91c1c;margin-top:4px;" id="pd-reste">—</div>
+                    </div>
+                </div>
+
+                <!-- Saisie d'un règlement -->
+                <div style="border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:16px;">
+                    <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:12px;" id="pd-form-title">Enregistrer un règlement</div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                        <div style="flex:1;min-width:140px;">
+                            <label style="font-size:12px;color:#64748b;">Montant (MAD)</label>
+                            <input type="number" id="pd-montant" min="0" step="0.01"
+                                style="width:100%;height:42px;border:1px solid #cbd5e1;border-radius:8px;padding:0 12px;font-size:18px;font-weight:700;color:#0f172a;">
+                        </div>
+                        <div style="min-width:140px;">
+                            <label style="font-size:12px;color:#64748b;">Date</label>
+                            <input type="date" id="pd-date"
+                                style="width:100%;height:42px;border:1px solid #e2e8f0;border-radius:8px;padding:0 10px;font-size:14px;color:#334155;">
+                        </div>
+                    </div>
+                    <label style="font-size:12px;color:#64748b;">Mode de règlement</label>
+                    <div id="pd-modes" style="display:flex;gap:6px;margin:6px 0 12px;flex-wrap:wrap;">
+                        <span class="pd-mode act" data-mode="virement">Virement</span>
+                        <span class="pd-mode" data-mode="espèces">Espèces</span>
+                        <span class="pd-mode" data-mode="chèque">Chèque</span>
+                        <span class="pd-mode" data-mode="traite">Traite</span>
+                    </div>
+                    <input type="text" id="pd-note" placeholder="Note (optionnel) — ex. réf. chèque, banque…"
+                        style="width:100%;height:38px;border:1px solid #e2e8f0;border-radius:8px;padding:0 12px;font-size:13px;color:#334155;margin-bottom:14px;">
+                    <div style="display:flex;gap:8px;">
+                        <button onclick="prefillReste()" style="flex:0 0 auto;background:#f1f5f9;color:#475569;border:none;border-radius:8px;height:42px;padding:0 14px;font-size:13px;font-weight:600;cursor:pointer;">Solder le reste</button>
+                        <button onclick="submitPayment()" id="pd-save" style="flex:1;background:#e8321a;color:#fff;border:none;border-radius:8px;height:42px;font-size:14px;font-weight:700;cursor:pointer;">✓ Enregistrer</button>
+                    </div>
+                    <div id="pd-error" style="display:none;color:#b91c1c;font-size:12px;margin-top:8px;"></div>
+                </div>
+
+                <!-- Solde initial -->
+                <div style="display:flex;align-items:flex-end;gap:10px;border:1px dashed #e2e8f0;border-radius:12px;padding:12px 16px;margin-bottom:16px;">
+                    <div style="flex:1;">
+                        <label style="font-size:12px;color:#64748b;">Solde d'ouverture (ardoise antérieure)</label>
+                        <input type="number" id="pd-solde" step="0.01"
+                            style="width:100%;height:38px;border:1px solid #e2e8f0;border-radius:8px;padding:0 12px;font-size:14px;color:#334155;">
+                    </div>
+                    <button onclick="submitSolde()" style="background:#f1f5f9;color:#475569;border:none;border-radius:8px;height:38px;padding:0 14px;font-size:13px;font-weight:600;cursor:pointer;">Mettre à jour</button>
+                </div>
+
+                <!-- Historique -->
+                <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:8px;">Historique des règlements</div>
+                <div id="pd-history" style="font-size:13px;color:#64748b;">—</div>
             </div>
         </div>
     </div>
@@ -1880,6 +2365,11 @@
                     </div>
 
                     <div style="display:flex;gap:12px;">
+                        <a href="/download-template"
+                            style="flex:none;font-size:12px;color:#2563eb;border:1px solid #bfdbfe;background:#eff6ff;padding:12px 16px;border-radius:10px;text-decoration:none;font-weight:600;display:flex;align-items:center;transition:background 0.15s;"
+                            onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">
+                            📥 Modèle
+                        </a>
                         <button type="button" onclick="purgeDb()"
                             style="flex:none;font-size:12px;color:#dc2626;border:1px solid #fecaca;background:#fef2f2;padding:12px 16px;border-radius:10px;cursor:pointer;font-weight:600;transition:background 0.15s;"
                             onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='#fef2f2'">

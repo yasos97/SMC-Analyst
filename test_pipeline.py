@@ -8,7 +8,6 @@ load_dotenv()
 
 # Import processing modules
 from processing.ingestion import read_file
-from processing.ai_mapper import map_columns
 from processing.normalizer import normalize_dataframe
 from processing.calculator import (
     compute_kpis, get_monthly_series, get_top10_clients, 
@@ -29,14 +28,14 @@ def run_test(filepath):
     print(f"Loaded {len(df_raw)} rows, {len(df_raw.columns)} columns.")
     print(f"Raw headers: {df_raw.columns.tolist()}")
     
-    # 2. AI Mapping
-    print("\n--- 2. AI Mapping ---")
-    mapping = map_columns(df_raw.columns.tolist())
-    print(f"AI Mapping Result: {mapping}")
+    # 2. AI Mapping (Bypassed)
+    print("\n--- 2. AI Mapping (Bypassed) ---")
+    mapping = {}
+    print(f"Empty mapping: {mapping}")
     
     # 3. Normalization
     print("\n--- 3. Normalization ---")
-    df_clean, final_map = normalize_dataframe(df_raw, mapping)
+    df_clean, final_map, corrections = normalize_dataframe(df_raw, mapping)
     print(f"Final mapping used: {final_map}")
     print(f"Columns after normalization: {df_clean.columns.tolist()}")
     print("\nData sample (first 3 rows):")

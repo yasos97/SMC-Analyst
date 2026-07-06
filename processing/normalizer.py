@@ -1,16 +1,98 @@
 """
-SalamaIQ — Module de Normalisation Pandas (Mode Strict)
-==========================================
-Rejette les fichiers non conformes.
-Applique le nettoyage strict (0.0 pour Qte, NaN pour Prix).
-Convertit TTC en HT et calcule la marge unitaire.
+SalamaIQ — Module de Normalisation Pandas (Mode Tolérant)
+==========================================================
+Accepte plusieurs variantes de schémas (fichiers 2024 et 2025) grâce à un
+système d'alias de colonnes.
+
+Règles :
+  - Les noms de colonnes sont normalisés (espaces/sauts de ligne compressés).
+  - Chaque champ interne peut être alimenté par plusieurs noms sources (alias).
+  - Quantités vides/invalides → 0.0 ; Prix/finance vides → NaN.
+  - Conversion TTC → HT et calcul de la marge unitaire.
+  - STATUT et Fournisseur sont OPTIONNELS (valeur par défaut si absents).
 """
 
+import re
 import numpy as np
 import pandas as pd
+from datetime import datetime
+from difflib import get_close_matches
+
+# ── Modèle de données interne ────────────────────────────────────────────────
+# Pour chaque champ interne, on liste les en-têtes sources acceptés (alias).
+# Les comparaisons se font après normalisation des espaces et en casse insensible.
+COLUMN_ALIASES = {
+    'datetransaction':        ['Date de Commande', 'Date', 'Date Commande'],
+    'fournisseur':            ['Fournisseur CARB', 'Fournisseur', 'Fournisseur Carb'],
+    'prix_achat_gasoil_ht':   ["Prix d'Achat Gasoil HT", "Prix d Achat Gasoil HT"],
+    'prix_achat_super_ht':    ["Prix d'Achat Super SP HT", "Prix d Achat Super SP HT"],
+    'client':                 ['Client'],
+    'volume_gasoil':          ['Qte Gasoil 10 PPM/L', 'Gasoil 10 PPM V', 'Qte Gasoil', 'Gasoil 10 PPM/L'],
+    'volume_super':           ['Qte SUPER SP/L', 'SUPER SP V', 'Qte Super', 'Super SP/L'],
+    'marge_ht':               ['Marge Ht', 'Marge HT'],
+    'prix_vente_gasoil_ttc':  ['Prix de Vente Gasoil TTC'],
+    'prix_vente_super_ttc':   ['Prix de Vente Super TTC'],
+    'ca_total':               ['Montant FA TTC', 'Montant Facture TTC'],
+    'ca':                     ['C.A', 'CA', 'C A'],
+    'achat_ht':               ['ACHAT HT', 'Achat HT'],
+    'statut':                 ['STATUT', 'Statut', 'Statut Client', 'Segment'],
+}
+
+# Fusion des variantes orthographiques connues (clé = forme sans espace en
+# majuscules → valeur = forme canonique). Évite les doublons fournisseurs.
+SUPPLIER_CANONICAL = {
+    'REDAZILUB': 'REDAZI LUB',
+}
+
+# Champs strictement nécessaires pour qu'un fichier soit exploitable.
+CORE_FIELDS = ['datetransaction', 'client']
+
+# Au moins un champ de chaque groupe doit être présent.
+CORE_GROUPS = {
+    'volume': ['volume_gasoil', 'volume_super'],
+    'finance': ['ca_total', 'ca', 'marge_ht'],
+}
+
+
+CLIENT_SEGMENT_MAPPING = {
+    'JAK TRANSPO': 'Industriel',
+    'SOMACOST': 'Industriel',
+    'SOMALEV': 'Industriel',
+    
+    'AGASTAT': 'Réseau',
+    'DRISSI': 'Réseau',
+    'S/S': 'Réseau',
+    'N ALI': 'Réseau',
+    
+    'AR PETROLE': 'Revendeur',
+    'BLACK OIL': 'Revendeur',
+    'CASALUB': 'Revendeur',
+    'DIMALUB': 'Revendeur',
+    'GALITRA': 'Revendeur',
+    'MADES': 'Revendeur',
+    'MFT': 'Revendeur',
+    'PETRONIC': 'Revendeur',
+    'REDAZI': 'Revendeur',
+    'SK POWER': 'Revendeur',
+    'STE CATER': 'Revendeur',
+    'STE DES CARB': 'Revendeur',
+    'ZAMAN': 'Revendeur'
+}
+
+def _assign_segment(client_name: str) -> str:
+    if pd.isna(client_name):
+        return 'NON RENSEIGNÉ'
+    c = str(client_name).upper()
+    for key, segment in CLIENT_SEGMENT_MAPPING.items():
+        if key.upper() in c:
+            return segment.upper()
+    return 'NON RENSEIGNÉ'
+
+# Modèle d'import présenté à l'utilisateur (téléchargement Excel).
 
 REQUIRED_COLUMNS = [
     'Date de Commande',
+    'Fournisseur CARB',
     "Prix d'Achat Gasoil HT",
     "Prix d'Achat Super SP HT",
     'Client',
@@ -22,101 +104,164 @@ REQUIRED_COLUMNS = [
     'Montant FA TTC',
     'C.A',
     'ACHAT HT',
-    'STATUT'
+    'STATUT',
 ]
 
-def normalize_dataframe(df: pd.DataFrame, ai_column_map: dict = None) -> tuple[pd.DataFrame, dict]:
-    """
-    Normalise le DataFrame selon le modèle strict exigé.
-    """
-    # 1. Vérification stricte des colonnes (ignorer la casse et les espaces superflus pour être robuste, mais chercher les exactes)
-    # Pour éviter les erreurs de typographie invisibles, on nettoie d'abord les headers du DataFrame
-    import re
-    df.columns = [re.sub(r'\s+', ' ', str(c)).strip() for c in df.columns]
-    
-    missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
-    if missing_cols:
-        raise ValueError(f"Fichier non conforme. Colonnes obligatoires manquantes : {', '.join(missing_cols)}")
 
+def _norm_key(s: str) -> str:
+    """Normalise un nom de colonne pour la comparaison (espaces + casse)."""
+    return re.sub(r'\s+', ' ', str(s)).strip().lower()
+
+
+def _resolve_columns(df: pd.DataFrame) -> dict:
+    """
+    Construit un mapping {champ_interne: nom_colonne_source} à partir des alias.
+    Retourne uniquement les champs effectivement trouvés dans le fichier.
+    """
+    # Index des colonnes présentes : clé normalisée -> nom réel
+    present = {_norm_key(c): c for c in df.columns}
+    mapping = {}
+    for field, aliases in COLUMN_ALIASES.items():
+        for alias in aliases:
+            key = _norm_key(alias)
+            if key in present:
+                mapping[field] = present[key]
+                break
+    return mapping
+
+
+def _clean_numeric(val):
+    """Convertit une valeur en float, NaN si impossible."""
+    if pd.isna(val) or val is None:
+        return np.nan
+    val_str = str(val).strip()
+    if val_str in ('', '-', '—', 'N/A', 'n/a', '#N/A', 'nan', 'None'):
+        return np.nan
+    cleaned = val_str.replace(' ', '').replace(' ', '').replace(',', '.')
+    try:
+        return float(cleaned)
+    except ValueError:
+        return np.nan
+
+
+def _robust_date_parser(val):
+    if pd.isna(val) or val is None:
+        return pd.NaT
+    if isinstance(val, (pd.Timestamp, datetime)):
+        return val
+    val_str = str(val).strip()
+    # Format utilisateur MM/DD/YYYY d'abord
+    d = pd.to_datetime(val_str, format='%m/%d/%Y', errors='coerce')
+    if pd.isna(d):
+        d = pd.to_datetime(val_str, dayfirst=False, errors='coerce')
+    return d
+
+
+def normalize_dataframe(df: pd.DataFrame, ai_column_map: dict = None, existing_clients: list = None) -> tuple[pd.DataFrame, dict, dict]:
+    """
+    Normalise le DataFrame vers le modèle interne, en tolérant plusieurs schémas.
+
+    Returns:
+        (DataFrame normalisé, mapping {champ_interne: colonne_source}, corrections {ancien: nouveau})
+    Raises:
+        ValueError si les champs essentiels sont introuvables.
+    """
+    # 1. Normalisation des noms de colonnes (compresse \n et espaces multiples)
     df = df.copy()
+    df.columns = [re.sub(r'\s+', ' ', str(c)).strip() for c in df.columns]
 
-    # 2. Nettoyage et typage
-    def clean_numeric(val):
-        if pd.isna(val) or val is None:
-            return np.nan
-        val_str = str(val).strip()
-        if val_str in ('', '-', '—', 'N/A', 'n/a', '#N/A', 'nan', 'None'):
-            return np.nan
-        # Gestion des virgules et espaces européens
-        cleaned = val_str.replace(' ', '').replace(',', '.')
-        try:
-            return float(cleaned)
-        except ValueError:
-            return np.nan
+    # 2. Résolution des colonnes via alias
+    mapping = _resolve_columns(df)
 
-    # Quantités : Les valeurs vides/invalides deviennent 0.0
-    qte_cols = ['Qte Gasoil 10 PPM/L', 'Qte SUPER SP/L']
-    for col in qte_cols:
-        df[col] = df[col].apply(clean_numeric).fillna(0.0)
+    # 3. Vérification des champs essentiels
+    missing_core = [f for f in CORE_FIELDS if f not in mapping]
+    if missing_core:
+        labels = {f: COLUMN_ALIASES[f][0] for f in missing_core}
+        raise ValueError(
+            "Fichier non conforme. Colonnes essentielles introuvables : "
+            + ', '.join(labels.values())
+        )
 
-    # Prix et Finance : Les valeurs vides/invalides deviennent NaN
-    price_cols = [
-        "Prix d'Achat Gasoil HT", "Prix d'Achat Super SP HT", 
-        "Prix de Vente Gasoil TTC", "Prix de Vente Super TTC",
-        "Marge Ht", "Montant FA TTC", "C.A", "ACHAT HT"
+    for group, fields in CORE_GROUPS.items():
+        if not any(f in mapping for f in fields):
+            attendus = ' ou '.join(COLUMN_ALIASES[f][0] for f in fields)
+            raise ValueError(
+                f"Fichier non conforme. Aucune colonne de type « {group} » trouvée "
+                f"(attendu : {attendus})."
+            )
+
+    # 4. Construction du DataFrame interne, champ par champ
+    out = pd.DataFrame(index=df.index)
+
+    # Date
+    out['datetransaction'] = df[mapping['datetransaction']].apply(_robust_date_parser)
+
+    # Quantités (NaN → 0.0)
+    for vol in ('volume_gasoil', 'volume_super'):
+        if vol in mapping:
+            out[vol] = df[mapping[vol]].apply(_clean_numeric).fillna(0.0)
+        else:
+            out[vol] = 0.0
+
+    # Prix et finance (NaN conservés)
+    price_fields = [
+        'prix_achat_gasoil_ht', 'prix_achat_super_ht',
+        'prix_vente_gasoil_ttc', 'prix_vente_super_ttc',
+        'marge_ht', 'ca_total', 'ca', 'achat_ht',
     ]
-    for col in price_cols:
-        df[col] = df[col].apply(clean_numeric)
+    for f in price_fields:
+        out[f] = df[mapping[f]].apply(_clean_numeric) if f in mapping else np.nan
 
-    # 3. Calculs Métier
-    df['prix_vente_gasoil_ht'] = df['Prix de Vente Gasoil TTC'] / 1.10
-    df['prix_vente_super_ht'] = df['Prix de Vente Super TTC'] / 1.10
+    # Texte : client (obligatoire), statut + fournisseur (optionnels)
+    out['client'] = df[mapping['client']]
     
-    # Marge unitaire avec protection division par 0
-    total_qte = df['Qte Gasoil 10 PPM/L'] + df['Qte SUPER SP/L']
-    df['marge_unitaire'] = np.where(total_qte > 0, df['Marge Ht'] / total_qte, np.nan)
+    # Text normalization for client and fournisseur
+    out['fournisseur'] = df[mapping['fournisseur']] if 'fournisseur' in mapping else 'NON RENSEIGNÉ'
+    for col, default in (('client', 'INCONNU'), ('fournisseur', 'NON RENSEIGNÉ')):
+        out[col] = out[col].astype(str).str.upper().str.strip()
+        out[col] = out[col].replace(r'\s+', ' ', regex=True)
+        out.loc[out[col].isin(['NAN', 'NONE', '']), col] = default.upper()
 
-    # 4. Parsing de la date
-    df['datetransaction'] = pd.to_datetime(df['Date de Commande'], dayfirst=False, errors='coerce')
-    df = df.dropna(subset=['datetransaction'])
+    corrections = {}
+    if existing_clients:
+        # Fuzzy matching sur les clients
+        existing_upper = [str(c).upper() for c in existing_clients if str(c).strip()]
+        unique_clients = out['client'].unique()
+        
+        for c in unique_clients:
+            if c == 'INCONNU':
+                continue
+            matches = get_close_matches(c, existing_upper, n=1, cutoff=0.85)
+            if matches and matches[0] != c:
+                best_match = matches[0]
+                corrections[c] = best_match
+                # Apply correction
+                out.loc[out['client'] == c, 'client'] = best_match
 
-    # 5. Nettoyage des chaînes de caractères (Client et Statut)
-    for col in ['Client', 'STATUT']:
-        df[col] = df[col].astype(str).str.upper().str.strip()
-        df[col] = df[col].replace(r'\s+', ' ', regex=True)
-        df.loc[df[col] == 'NAN', col] = 'INCONNU'
+    # Auto-assign Statut based on Client name mapping
+    file_statut = df[mapping['statut']] if 'statut' in mapping else pd.Series(['NON RENSEIGNÉ']*len(df), index=df.index)
+    file_statut = file_statut.astype(str).str.upper().str.strip().replace(r'\s+', ' ', regex=True)
+    file_statut[file_statut.isin(['NAN', 'NONE', ''])] = 'NON RENSEIGNÉ'
 
-    # 6. Renommage vers le modèle de données interne
-    rename_map = {
-        'Client': 'client',
-        'STATUT': 'statut',
-        'Qte Gasoil 10 PPM/L': 'volume_gasoil',
-        'Qte SUPER SP/L': 'volume_super',
-        'Marge Ht': 'marge_ht',
-        'Montant FA TTC': 'ca_total',
-        'C.A': 'ca',
-        'ACHAT HT': 'achat_ht',
-        "Prix d'Achat Gasoil HT": 'prix_achat_gasoil_ht',
-        "Prix d'Achat Super SP HT": 'prix_achat_super_ht',
-        "Prix de Vente Gasoil TTC": 'prix_vente_gasoil_ttc',
-        "Prix de Vente Super TTC": 'prix_vente_super_ttc',
-    }
-    df = df.rename(columns=rename_map)
+    out['statut'] = out['client'].apply(_assign_segment)
+    mask_not_found = out['statut'] == 'NON RENSEIGNÉ'
+    out.loc[mask_not_found, 'statut'] = file_statut[mask_not_found]
 
-    # Filtrer pour ne garder que les colonnes nécessaires (sécurité)
-    final_cols = [
-        'datetransaction', 'client', 'statut', 'volume_gasoil', 'volume_super', 
-        'marge_ht', 'ca_total', 'ca', 'achat_ht', 'prix_achat_gasoil_ht', 
-        'prix_achat_super_ht', 'prix_vente_gasoil_ttc', 'prix_vente_super_ttc', 
-        'prix_vente_gasoil_ht', 'prix_vente_super_ht', 'marge_unitaire'
-    ]
-    df = df[final_cols]
+    # Canonicalisation des noms de fournisseurs (fusion des variantes connues)
+    out['fournisseur'] = out['fournisseur'].apply(
+        lambda v: SUPPLIER_CANONICAL.get(str(v).replace(' ', ''), v)
+    )
 
-    # Supprimer les lignes entièrement vides (sur la base de CA et volumes)
-    df = df.dropna(subset=['ca_total', 'volume_gasoil', 'volume_super'], how='all')
+    # 5. Calculs métier
+    out['prix_vente_gasoil_ht'] = out['prix_vente_gasoil_ttc'] / 1.10
+    out['prix_vente_super_ht'] = out['prix_vente_super_ttc'] / 1.10
 
-    df = df.drop_duplicates().reset_index(drop=True)
+    total_qte = out['volume_gasoil'] + out['volume_super']
+    out['marge_unitaire'] = np.where(total_qte > 0, out['marge_ht'] / total_qte, np.nan)
 
-    # Faux mapping retourné pour la compatibilité avec app.py
-    return df, {}
+    # 6. Nettoyage final
+    out = out.dropna(subset=['datetransaction'])
+    out = out.dropna(subset=['ca_total', 'volume_gasoil', 'volume_super'], how='all')
+    out = out.drop_duplicates().reset_index(drop=True)
 
+    return out, mapping, corrections

@@ -1,0 +1,28 @@
+; SalamaIQ — service systemd
+; Copier vers : /etc/systemd/system/salamaiq.service
+; Puis : sudo systemctl daemon-reload && sudo systemctl enable --now salamaiq
+; Adapter User, WorkingDirectory et le chemin du venv à votre VPS.
+
+[Unit]
+Description=SalamaIQ (Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=salamaiq
+Group=salamaiq
+WorkingDirectory=/opt/salamaiq
+EnvironmentFile=/opt/salamaiq/.env
+ExecStart=/opt/salamaiq/.venv/bin/gunicorn -c gunicorn.conf.py app:app
+Restart=always
+RestartSec=3
+
+; Durcissement basique
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/salamaiq
+
+[Install]
+WantedBy=multi-user.target

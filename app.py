@@ -18,7 +18,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from flask import (Flask, render_template, request, jsonify,
-                   session, redirect, url_for, send_file, Response)
+                   session, redirect, url_for, send_file, Response, flash)
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -28,13 +28,15 @@ import base64
 import io
 
 # ── Base de Données ──────────────────────────────────────────────────────────
-from database.models import db, init_db, load_all_transactions, clear_database, Transaction
+from database.models import db, init_db, load_ventes, clear_database, Vente
 
 # ── Modules SalamaIQ ─────────────────────────────────────────────────────────
 from processing.pdf_generator import generate_client_report
+from processing.excel_generator import generate_excel_report
 from processing.ingestion import read_file
 from processing.normalizer import normalize_dataframe
 from processing.calculator import (
+    prepare_activite_data,
     compute_kpis, get_monthly_series,
     get_top10_clients, get_margin_bridge,
     get_product_mix, get_cumulative_series,
@@ -47,9 +49,14 @@ from processing.calculator import (
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(32))
+# On force l'utilisation de la clé secrète du .env, sinon une clé fixe par défaut (pour éviter la déconnexion entre workers gunicorn)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'salama-iq-default-secret-key-2026')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 Mo max
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///salama_iq.db')
+
+import os
+basedir = os.path.abspath(os.path.dirname(__file__))
+# Utiliser instance/ pour séparer la base de données du code (pratique pour git et les backups VPS)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'instance', 'salama_iq.db'))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 init_db(app)
@@ -101,51 +108,23 @@ def login_required(f):
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """Gestionnaire de connexion : Mot de passe + 2FA."""
+    """Gestionnaire de connexion : Mot de passe uniquement."""
     # Config depuis .env ou défaut
-    ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'salama2026')
-    TOTP_SECRET = os.getenv('TOTP_SECRET')
+    ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
+    CLIENT_PASSWORD = os.getenv('CLIENT_PASSWORD')
     
-    # Si pas de secret TOTP dans .env, on en génère un persistant pour la session
-    if not TOTP_SECRET:
-        if 'temp_totp_secret' not in session:
-            session['temp_totp_secret'] = pyotp.random_base32()
-        TOTP_SECRET = session['temp_totp_secret']
-
-    totp = pyotp.TOTP(TOTP_SECRET)
+    if not ADMIN_PASSWORD:
+        ADMIN_PASSWORD = 'Salama@2026'
 
     if request.method == 'POST':
-        # Étape 1 : Mot de passe
         if 'password' in request.form:
-            if request.form['password'] == ADMIN_PASSWORD:
-                session['pw_verified'] = True
-                return render_template('login.html', step='otp')
+            pwd = request.form['password']
+            if pwd == ADMIN_PASSWORD or (CLIENT_PASSWORD and pwd == CLIENT_PASSWORD):
+                session['authenticated'] = True
+                return redirect(url_for('activite'))
             return render_template('login.html', step='password', error="Mot de passe incorrect")
 
-        # Étape 2 : OTP
-        if 'otp' in request.form:
-            if not session.get('pw_verified'):
-                return redirect(url_for('login'))
-            
-            if totp.verify(request.form['otp']):
-                session['authenticated'] = True
-                session.pop('pw_verified', None)
-                return redirect(url_for('index'))
-            
-            return render_template('login.html', step='otp', error="Code invalide ou expiré")
-
-    # Rendu initial ou étape OTP
-    if not session.get('pw_verified'):
-        return render_template('login.html', step='password')
-    
-    # Si on est ici, le mot de passe est bon, on montre le QR Code + champ OTP
-    provisioning_uri = totp.provisioning_uri(name="Analyste", issuer_name="SalamaIQ")
-    img = qrcode.make(provisioning_uri)
-    buf = io.BytesIO()
-    img.save(buf, format='PNG')
-    qr_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-    
-    return render_template('login.html', step='setup', qr_code=qr_b64)
+    return render_template('login.html', step='password')
 
 @app.route('/logout')
 def logout():
@@ -165,18 +144,20 @@ def get_session_id() -> str:
 
 
 def get_dataframe(session_id: str) -> pd.DataFrame | None:
-    df = load_all_transactions()
+    df = load_ventes()
     return df if not df.empty else None
 
 
-def store_dataframe(session_id: str, df: pd.DataFrame):
-    """Enregistre un DataFrame dans la base SQLite (table transaction)."""
+def store_dataframe(session_id: str, df: pd.DataFrame) -> dict:
+    """Enregistre un DataFrame dans la base SQLite avec détection de doublons."""
     if df.empty:
-        return
+        return {'inserted': 0, 'duplicates': 0}
+
+    df = df.copy()
 
     # On s'assure d'avoir uniquement les colonnes du modèle
     cols_db = [
-        'datetransaction', 'client', 'statut', 
+        'datetransaction', 'client', 'fournisseur', 'statut', 
         'volume_gasoil', 'volume_super', 
         'marge_ht', 'ca_total', 'ca', 'achat_ht',
         'prix_achat_gasoil_ht', 'prix_achat_super_ht',
@@ -191,139 +172,109 @@ def store_dataframe(session_id: str, df: pd.DataFrame):
 
     df_db = df[cols_db].copy()
 
-    # Dédoublonnage sur la BDD existante (très basique : date + client + volumes + CA)
+    # Dédoublonnage sur la BDD existante (date normalisée + client + volumes + CA)
     merge_keys = ['datetransaction', 'client', 'volume_gasoil', 'volume_super', 'ca_total']
+    
+    duplicates = 0
     try:
-        existing_df = load_all_transactions()
+        existing_df = load_ventes()
         if not existing_df.empty:
-            # Ne garder que les colonnes de merge de existing_df pour éviter les suffixes _x/_y
-            existing_keys = existing_df[merge_keys].drop_duplicates()
-            merged = pd.merge(
-                df_db, existing_keys,
-                on=merge_keys,
-                how='left', indicator=True
-            )
+            # Convertir les dates en string dans les deux côtés
+            df_db['_date_str'] = pd.to_datetime(df_db['datetransaction'], errors='coerce').dt.strftime('%Y-%m-%d')
+            existing_df['_date_str'] = pd.to_datetime(existing_df['datetransaction'], errors='coerce').dt.strftime('%Y-%m-%d')
+            
+            # Clés de comparaison avec date normalisée
+            compare_keys = ['_date_str', 'client', 'volume_gasoil', 'volume_super', 'ca_total']
+            
+            # Remplir les NaN pour que le merge fonctionne
+            for k in compare_keys:
+                df_db[k] = df_db[k].fillna('__NULL__')
+                existing_df[k] = existing_df[k].fillna('__NULL__')
+            
+            # Merge pour trouver les doublons
+            merged = pd.merge(df_db, existing_df[compare_keys].drop_duplicates(),
+                              on=compare_keys, how='left', indicator=True)
+            
+            total = len(df_db)
             df_db = merged[merged['_merge'] == 'left_only'][cols_db].copy()
+            df_db.replace('__NULL__', np.nan, inplace=True)
+            duplicates = total - len(df_db)
     except Exception as e:
-        print(f"[SalamaIQ] Info: {e}")
+        print(f"[SalamaIQ] Erreur lors de la déduplication: {e}")
 
     if df_db.empty:
         print("[SalamaIQ] Aucune nouvelle donnée à insérer (doublons détectés).")
-        return
+        return {'inserted': 0, 'duplicates': duplicates}
 
     df_db['batch_id'] = str(uuid.uuid4())
 
     # Enregistrer en base
-    df_db.to_sql('transaction', db.engine, if_exists='append', index=False)
+    df_db.to_sql('vente', db.engine, if_exists='append', index=False)
     print(f"[SalamaIQ] {len(df_db)} nouvelles transactions insérées.")
+    return {'inserted': len(df_db), 'duplicates': duplicates}
 
 
 def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     """Applique les filtres utilisateur au DataFrame."""
     df_filtered = df.copy()
 
-    if filters.get('date_from'):
-        try:
-            df_filtered = df_filtered[
-                df_filtered['datetransaction'] >= pd.to_datetime(filters['date_from'])
-            ]
-        except Exception:
-            pass
-
-    if filters.get('date_to'):
-        try:
-            df_filtered = df_filtered[
-                df_filtered['datetransaction'] <= pd.to_datetime(filters['date_to'])
-            ]
-        except Exception:
-            pass
-
-    if filters.get('statut') and 'statut' in df_filtered.columns:
-        statuts = filters['statut'] if isinstance(filters['statut'], list) else [filters['statut']]
-        if statuts and statuts != ['']:
-            df_filtered = df_filtered[df_filtered['statut'].isin(statuts)]
-
-    if filters.get('client') and 'client' in df_filtered.columns:
-        clients = filters['client'] if isinstance(filters['client'], list) else [filters['client']]
-        if clients and clients != ['']:
-            df_filtered = df_filtered[df_filtered['client'].isin(clients)]
-
+    # 1. Filtre sur l'année
     if filters.get('years') and 'datetransaction' in df_filtered.columns:
         years = filters['years'] if isinstance(filters['years'], list) else [filters['years']]
-        if years and years != ['']:
+        years = [y for y in years if y != '']
+        if years:
+            years_int = [int(y) for y in years if str(y).isdigit()]
+            if years_int:
+                df_filtered['datetransaction'] = pd.to_datetime(df_filtered['datetransaction'], errors='coerce')
+                # Inclure aussi N-1 pour permettre les comparaisons dans _split_by_year
+                prev_year = min(years_int) - 1
+                all_years = set(years_int) | {prev_year}
+                df_filtered = df_filtered[df_filtered['datetransaction'].dt.year.isin(all_years)]
+    else:
+        # Fallback: date_from et date_to si pas d'année sélectionnée
+        if filters.get('date_from'):
             try:
-                # Convertir les années de string en int
-                years_int = sorted([int(y) for y in years])
-                
-                # On inclut toujours l'année précédant la sélection minimale pour permettre la comparaison N-1
-                comparison_years = years_int.copy()
-                if not filters.get('date_from') and not filters.get('date_to'):
-                    prev_year = min(years_int) - 1
-                    comparison_years.append(prev_year)
-                
-                df_filtered = df_filtered[df_filtered['datetransaction'].dt.year.isin(comparison_years)]
+                df_filtered = df_filtered[
+                    df_filtered['datetransaction'] >= pd.to_datetime(filters['date_from'])
+                ]
             except Exception:
                 pass
 
+        if filters.get('date_to'):
+            try:
+                df_filtered = df_filtered[
+                    df_filtered['datetransaction'] <= pd.to_datetime(filters['date_to'])
+                ]
+            except Exception:
+                pass
+
+    # 2. Filtre statut
+    if filters.get('statut') and 'statut' in df_filtered.columns:
+        statuts = filters['statut'] if isinstance(filters['statut'], list) else [filters['statut']]
+        statuts = [s for s in statuts if s != '']
+        if statuts:
+            df_filtered = df_filtered[df_filtered['statut'].isin(statuts)]
+
+    # 3. Filtre client
+    if filters.get('client') and 'client' in df_filtered.columns:
+        clients = filters['client'] if isinstance(filters['client'], list) else [filters['client']]
+        clients = [c for c in clients if c != '']
+        if clients:
+            df_filtered = df_filtered[df_filtered['client'].isin(clients)]
+
     return df_filtered
-
-
-def prepare_dashboard_data(df: pd.DataFrame) -> dict:
-    """Prépare toutes les données nécessaires au template dashboard."""
-    kpis = compute_kpis(df)
-    monthly = get_monthly_series(df)
-    top10 = get_top10_clients(df)
-    bridge = get_margin_bridge(df)
-    product_mix = get_product_mix(df)
-    cumulative = get_cumulative_series(df)
-    client_bubble = get_client_bubble(df)
-    heatmap = get_monthly_heatmap(df)
-    spread = get_spread_analysis(df)
-    profitability = get_client_profitability(df)
-
-    # Listes pour les filtres
-    statuts = sorted(df['statut'].dropna().unique().tolist()) if 'statut' in df.columns else []
-    clients = sorted(df['client'].dropna().unique().tolist()) if 'client' in df.columns else []
-    
-    years = []
-    if 'datetransaction' in df.columns:
-        years = sorted(df['datetransaction'].dt.year.dropna().unique().tolist(), reverse=True)
-
-    # Dates min/max pour le date picker
-    date_min = str(df['datetransaction'].min().date()) if 'datetransaction' in df.columns else ''
-    date_max = str(df['datetransaction'].max().date()) if 'datetransaction' in df.columns else ''
-
-    return {
-        'kpis': kpis,
-        'monthly_series': monthly,
-        'top10_clients': top10,
-        'margin_bridge': bridge,
-        'product_mix': product_mix,
-        'cumulative': cumulative,
-        'client_bubble': client_bubble,
-        'heatmap': heatmap,
-        'spread': spread,
-        'profitability': profitability,
-        'filters_data': {
-            'statuts': [str(s) for s in statuts],
-            'clients': [str(c) for c in clients],
-            'years': [str(int(y)) for y in years],
-            'date_min': date_min,
-            'date_max': date_max,
-        }
-    }
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 @app.route('/')
+@app.route('/activite')
 @login_required
-def index():
+def activite():
     """Page principale unifiée : charge le Dashboard depuis la BDD ou affiche l'état vide."""
     session_id = get_session_id()
     df = get_dataframe(session_id)
 
-    # Si aucune donnée en BDD → état vide (on passe db_empty=True au template)
     if df is None or df.empty:
         empty_kpis = {
             'ca_total': 0, 'ca_total_n1': 0, 'ca_variation': None,
@@ -338,7 +289,7 @@ def index():
             'total_transactions': 0, 'nb_clients': 0, 'nb_statuts': 0,
             'ca_month': 0, 'ca_prev_month': 0, 'ca_month_variation': None, 'month_label': '—',
         }
-        return render_template('dashboard.html',
+        return render_template('activite.html',
             session_id=session_id,
             filename="Aucune donnée",
             mapping_source="—",
@@ -361,8 +312,8 @@ def index():
         )
 
     # Données existantes → Dashboard complet
-    dashboard_data = prepare_dashboard_data(df)
-    return render_template('dashboard.html',
+    dashboard_data = prepare_activite_data(df)
+    return render_template('activite.html',
         session_id=session_id,
         filename=f"Historique ({len(df)} transactions)",
         mapping_source="BDD SQLite",
@@ -438,6 +389,15 @@ def upload():
     final_mapping = {}
     filenames = []
     mapping_source = "Normalisation Standard"
+    
+    # Récupérer les clients existants pour le fuzzy matching
+    try:
+        existing_df = load_ventes()
+        existing_clients = existing_df['client'].dropna().unique().tolist() if not existing_df.empty else []
+    except Exception:
+        existing_clients = []
+    
+    all_corrections = {}
 
     for file in files:
         if not allowed_file(file.filename):
@@ -455,10 +415,11 @@ def upload():
                 continue
 
             # ── Étape 3 : Normalisation (Pandas) ─────────────────────────────────
-            df_norm, mapping = normalize_dataframe(df_raw, {})
+            df_norm, mapping, corrections = normalize_dataframe(df_raw, {}, existing_clients=existing_clients)
             if not df_norm.empty:
                 dfs_to_concat.append(df_norm)
                 final_mapping.update(mapping)
+                all_corrections.update(corrections)
 
         except Exception as e:
             print(f"Erreur lors du traitement de {filename_sec} : {e}")
@@ -479,6 +440,11 @@ def upload():
     red_flags = []
     if len(dfs_to_concat) > 1:
         red_flags.append(f"📦 {len(dfs_to_concat)} fichiers fusionnés avec succès (Total : {len(df_clean)} transactions).")
+        
+    # Notifications des corrections automatiques
+    if all_corrections:
+        for old, new in all_corrections.items():
+            red_flags.append(f"🛠️ Auto-correction client : {old} ➔ {new}")
 
     # Marge manquante
     if 'marge_ht' in df_clean.columns:
@@ -495,46 +461,23 @@ def upload():
 
     # ── Stockage en Base de Données (SQLite) ─────────────────────────────────
     session_id = get_session_id()
-    store_dataframe(session_id, df_clean)
+    result = store_dataframe(session_id, df_clean)
 
-    # ── Rechargement Complet (Passé + Présent) ───────────────────────────────
-    df_history = get_dataframe(session_id)
-
-    # ── Étape 4 : Calcul des KPIs (Pandas sur tout l'historique) ─────────────
-    dashboard_data = prepare_dashboard_data(df_history)
-    kpis = dashboard_data['kpis']
-    filename_display = f"Données Globales ({len(filenames)} nv. fichiers aj.)"
+    if result['duplicates'] > 0:
+        session['upload_message'] = f"✅ {result['inserted']} nouvelles lignes importées. ⚠️ {result['duplicates']} doublons ignorés."
+    elif result['inserted'] > 0:
+        session['upload_message'] = f"✅ {result['inserted']} lignes importées avec succès."
+    else:
+        session['upload_message'] = "⚠️ Aucune nouvelle donnée (tout était déjà en base)."
 
     # ── Rendu du Dashboard ────────────────────────────────────────────────────
-    return render_template(
-        'dashboard.html',
-        session_id=session_id,
-        filename=filename_display,
-        mapping_source=mapping_source,
-        column_mapping=final_mapping,
-        kpis=dashboard_data['kpis'],
-        monthly_series=json.dumps(dashboard_data['monthly_series'], cls=NumpyEncoder),
-        top10_clients=json.dumps(dashboard_data['top10_clients'], cls=NumpyEncoder),
-        margin_bridge=json.dumps(dashboard_data['margin_bridge'], cls=NumpyEncoder),
-        product_mix=json.dumps(dashboard_data['product_mix'], cls=NumpyEncoder),
-        cumulative=json.dumps(dashboard_data['cumulative'], cls=NumpyEncoder),
-        client_bubble=json.dumps(dashboard_data['client_bubble'], cls=NumpyEncoder),
-        heatmap=json.dumps(dashboard_data['heatmap'], cls=NumpyEncoder),
-        spread=json.dumps(dashboard_data['spread'], cls=NumpyEncoder),
-        profitability=json.dumps(dashboard_data['profitability'], cls=NumpyEncoder),
-        filters_data=json.dumps(dashboard_data['filters_data'], cls=NumpyEncoder),
-        nb_rows=len(df_history),
-        columns_found=list(final_mapping.values()),
-        red_flags=red_flags,
-    )
+    return redirect(url_for('activite'))
 
 
 
-
-
-@app.route('/api/filtered-data', methods=['GET'])
+@app.route('/api/activite-data', methods=['GET'])
 @login_required
-def filtered_data():
+def activite_data():
     """
     Retourne les données recalculées après application des filtres.
     Utilisé pour la mise à jour dynamique des graphiques sans rechargement de page.
@@ -560,7 +503,7 @@ def filtered_data():
             return jsonify({'error': 'Aucune donnée pour ces filtres'}), 200
 
         # Recalculer les données
-        dashboard_data = prepare_dashboard_data(df_filtered)
+        dashboard_data = prepare_activite_data(df_filtered)
 
         return jsonify_safe({
             'kpis': dashboard_data['kpis'],
@@ -573,10 +516,13 @@ def filtered_data():
             'heatmap': dashboard_data['heatmap'],
             'spread': dashboard_data['spread'],
             'profitability': dashboard_data['profitability'],
+            'filters_data': dashboard_data['filters_data'],
             'nb_rows': len(df_filtered),
         })
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -604,7 +550,7 @@ def export_client_pdf():
             return "Aucune donnée pour ces filtres", 404
 
         # Préparer les KPIs pour le PDF
-        dashboard_data = prepare_dashboard_data(df_filtered)
+        dashboard_data = prepare_activite_data(df_filtered)
         kpis = dashboard_data['kpis']
         
         # Déterminer les labels d'en-tête
@@ -615,10 +561,12 @@ def export_client_pdf():
         p_start = d_min.strftime('%d/%m/%Y') if pd.notnull(d_min) else 'N/A'
         p_end = d_max.strftime('%d/%m/%Y') if pd.notnull(d_max) else 'N/A'
         period_label = f"{p_start} au {p_end}"
+        # Récupérer le paramètre 'compare'
+        compare_flag = request.args.get('compare', '1') == '1'
         
         # Générer le PDF (binaire)
-        print(f">>> [PDF] Début génération pour {len(df_filtered)} lignes", flush=True)
-        pdf_content = generate_client_report(kpis, df_filtered, client_label, period_label)
+        print(f">>> [PDF] Début génération pour {len(df_filtered)} lignes, compare={compare_flag}", flush=True)
+        pdf_content = generate_client_report(kpis, df_filtered, client_label, period_label, compare=compare_flag)
         print(f">>> [PDF] Binaire généré: {len(pdf_content)} octets", flush=True)
         
         # Préparer le nom du fichier (ASCII uniquement pour éviter les bugs de téléchargement)
@@ -640,8 +588,65 @@ def export_client_pdf():
         import traceback
         traceback.print_exc()
         return f"Erreur lors de la génération du PDF: {str(e)}", 500
-        return f"Erreur lors de la génération du PDF: {str(e)}", 500
 
+
+@app.route('/api/generate-excel', methods=['GET'])
+@login_required
+def export_excel():
+    """Génère un rapport Excel professionnel avec graphiques"""
+    try:
+        session_id = request.args.get('session_id', get_session_id())
+        df = get_dataframe(session_id)
+        if df is None or df.empty:
+            return "Aucune donnée disponible", 404
+
+        filters = {
+            'date_from': request.args.get('date_from'),
+            'date_to': request.args.get('date_to'),
+            'statut': request.args.getlist('statut'),
+            'client': request.args.getlist('client'),
+            'years': request.args.getlist('years'),
+        }
+        df_filtered = apply_filters(df, filters)
+        
+        if df_filtered.empty:
+            return "Aucune donnée pour ces filtres", 404
+
+        dashboard_data = prepare_activite_data(df_filtered)
+        kpis = dashboard_data['kpis']
+        
+        client_label = ", ".join(filters['client']) if filters['client'] else "Tous les clients"
+        
+        d_min = df_filtered['datetransaction'].min()
+        d_max = df_filtered['datetransaction'].max()
+        p_start = d_min.strftime('%d/%m/%Y') if pd.notnull(d_min) else 'N/A'
+        p_end = d_max.strftime('%d/%m/%Y') if pd.notnull(d_max) else 'N/A'
+        period_label = f"{p_start} au {p_end}"
+        
+        compare_flag = request.args.get('compare', '1') == '1'
+        
+        print(f">>> [EXCEL] Début génération pour {len(df_filtered)} lignes, compare={compare_flag}", flush=True)
+        excel_content = generate_excel_report(kpis, df_filtered, client_label, period_label, compare=compare_flag)
+        print(f">>> [EXCEL] Binaire généré: {len(excel_content)} octets", flush=True)
+        
+        from urllib.parse import quote
+        safe_client = client_label.replace(' ', '_').replace(',', '_')
+        safe_client = "".join(c for c in safe_client if c.isalnum() or c == '_')
+        filename = f"Rapport_SalamaIQ_{safe_client}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        
+        import io
+        return send_file(
+            io.BytesIO(excel_content),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        print(f">>> [EXCEL] ERREUR: {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return f"Erreur lors de la génération de l'Excel: {str(e)}", 500
 
 @app.route('/api/transactions', methods=['GET'])
 @login_required
@@ -712,13 +717,13 @@ def api_purge():
 @app.route('/api/transactions/add', methods=['POST'])
 @login_required
 def add_transaction():
-    """Ajoute une transaction manuellement."""
+    """Ajoute une vente manuellement."""
     try:
-        data = request.get_json()
+        data = request.json
         if not data:
-            return jsonify({'error': 'Données manquantes'}), 400
+            return jsonify({'error': 'Données invalides'}), 400
 
-        tx = Transaction(
+        tx = Vente(
             batch_id='manual',
             datetransaction=pd.to_datetime(data.get('datetransaction')) if data.get('datetransaction') else None,
             client=data.get('client', ''),
@@ -739,12 +744,12 @@ def add_transaction():
 @app.route('/api/transactions/<int:tx_id>/update', methods=['PUT'])
 @login_required
 def update_transaction(tx_id):
-    """Met à jour une transaction existante."""
+    """Met à jour une vente existante."""
     try:
         data = request.get_json()
-        tx = db.session.get(Transaction, tx_id)
+        tx = db.session.get(Vente, tx_id)
         if not tx:
-            return jsonify({'error': 'Transaction introuvable'}), 404
+            return jsonify({'error': 'Vente introuvable'}), 404
 
         if data.get('datetransaction'):
             tx.datetransaction = pd.to_datetime(data['datetransaction'])
@@ -767,7 +772,7 @@ def update_transaction(tx_id):
 def delete_transaction(tx_id):
     """Supprime une transaction."""
     try:
-        tx = db.session.get(Transaction, tx_id)
+        tx = db.session.get(Vente, tx_id)
         if not tx:
             return jsonify({'error': 'Transaction introuvable'}), 404
         db.session.delete(tx)

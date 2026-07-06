@@ -1,0 +1,38 @@
+/*
+ * SalamaIQ — Utilitaires statiques
+ * =================================
+ * Remplace le CDN Tailwind (interdit en production) par uniquement les
+ * classes utilitaires réellement utilisées dans le template (modals,
+ * mise en page). Aucune dépendance externe, aucun build.
+ */
+
+/* Affichage / visibilité */
+.hidden { display: none !important; }
+.block { display: block; }
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.flex-1 { flex: 1 1 0%; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.overflow-auto { overflow: auto; }
+
+/* Positionnement (overlays de modals) */
+.fixed { position: fixed; }
+.inset-0 { top: 0; right: 0; bottom: 0; left: 0; }
+.z-50 { z-index: 50; }
+.z-\[60\] { z-index: 60; }
+
+/* Largeurs / hauteurs */
+.w-full { width: 100%; }
+.w-\[95vw\] { width: 95vw; }
+.w-\[98vw\] { width: 98vw; }
+.h-\[90vh\] { height: 90vh; }
+.h-\[95vh\] { height: 95vh; }
+.max-w-lg { max-width: 32rem; }
+.max-w-xl { max-width: 36rem; }
+.max-w-4xl { max-width: 56rem; }
+
+/* Marges / paddings */
+.mx-4 { margin-left: 1rem; margin-right: 1rem; }
+.p-5 { padding: 1.25rem; }
+.p-6 { padding: 1.5rem; }
