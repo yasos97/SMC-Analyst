@@ -279,6 +279,9 @@ def normalize_dataframe(df: pd.DataFrame, ai_column_map: dict = None, existing_c
     # 5. Calculs métier
     out['prix_vente_gasoil_ht'] = out['prix_vente_gasoil_ttc'] / 1.10
     out['prix_vente_super_ht'] = out['prix_vente_super_ttc'] / 1.10
+    
+    # Pour les fichiers SAP, Val.nette (ca_total) sert aussi de CA HT
+    out['ca'] = out['ca'].fillna(out['ca_total'])
 
     total_qte = out['volume_gasoil'] + out['volume_super']
     out['marge_unitaire'] = np.where(total_qte > 0, out['marge_ht'] / total_qte, np.nan)
