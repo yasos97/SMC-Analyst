@@ -51,7 +51,11 @@ def read_file(filepath: str) -> tuple[pd.DataFrame, list]:
         if ext in ['.xlsx', '.xlsm']:
             df_raw = pd.read_excel(filepath, header=None)
         elif ext in ['.xls']:
-            df_raw = pd.read_excel(filepath, header=None, engine='xlrd')
+            try:
+                df_raw = pd.read_excel(filepath, header=None, engine='xlrd')
+            except Exception as e:
+                # Fallback pour les fichiers SAP (.XLS qui sont en réalité des TSV UTF-16)
+                df_raw = pd.read_csv(filepath, header=None, encoding='utf-16', sep='\t', dtype=str)
         elif ext == '.csv':
             # Auto-détection de l'encodage
             with open(filepath, 'rb') as f:
@@ -86,6 +90,9 @@ def read_file(filepath: str) -> tuple[pd.DataFrame, list]:
 
         # Supprimer les lignes et colonnes 100% vides
         df = df.dropna(how='all').dropna(axis=1, how='all')
+
+        # SAP génère souvent des doublons parfaits (ex: même facture, même produit en double)
+        df = df.drop_duplicates()
 
         # Filtrer les en-têtes pertinents (non vides, non numériques purs)
         valid_headers = [h for h in raw_headers if h and h.lower() not in ['nan', 'none', '']]

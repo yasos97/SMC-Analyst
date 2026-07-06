@@ -22,20 +22,20 @@ from difflib import get_close_matches
 # Pour chaque champ interne, on liste les en-têtes sources acceptés (alias).
 # Les comparaisons se font après normalisation des espaces et en casse insensible.
 COLUMN_ALIASES = {
-    'datetransaction':        ['Date de Commande', 'Date', 'Date Commande'],
+    'datetransaction':        ['Date de Commande', 'Date', 'Date Commande', 'Date doc.'],
     'fournisseur':            ['Fournisseur CARB', 'Fournisseur', 'Fournisseur Carb'],
     'prix_achat_gasoil_ht':   ["Prix d'Achat Gasoil HT", "Prix d Achat Gasoil HT"],
     'prix_achat_super_ht':    ["Prix d'Achat Super SP HT", "Prix d Achat Super SP HT"],
-    'client':                 ['Client'],
-    'volume_gasoil':          ['Qte Gasoil 10 PPM/L', 'Gasoil 10 PPM V', 'Qte Gasoil', 'Gasoil 10 PPM/L'],
-    'volume_super':           ['Qte SUPER SP/L', 'SUPER SP V', 'Qte Super', 'Super SP/L'],
+    'client':                 ['Client', "Donneur d'ordre"],
+    'volume_gasoil':          ['Qte Gasoil 10 PPM/L', 'Gasoil 10 PPM V', 'Qte Gasoil', 'Gasoil 10 PPM/L', 'volume_gasoil_sap'],
+    'volume_super':           ['Qte SUPER SP/L', 'SUPER SP V', 'Qte Super', 'Super SP/L', 'volume_super_sap'],
     'marge_ht':               ['Marge Ht', 'Marge HT'],
     'prix_vente_gasoil_ttc':  ['Prix de Vente Gasoil TTC'],
     'prix_vente_super_ttc':   ['Prix de Vente Super TTC'],
-    'ca_total':               ['Montant FA TTC', 'Montant Facture TTC'],
+    'ca_total':               ['Montant FA TTC', 'Montant Facture TTC', 'Val.nette'],
     'ca':                     ['C.A', 'CA', 'C A'],
     'achat_ht':               ['ACHAT HT', 'Achat HT'],
-    'statut':                 ['STATUT', 'Statut', 'Statut Client', 'Segment'],
+    'statut':                 ['STATUT', 'Statut', 'Statut Client', 'Segment', 'TDVt'],
 }
 
 # Fusion des variantes orthographiques connues (clé = forme sans espace en
@@ -64,19 +64,19 @@ CLIENT_SEGMENT_MAPPING = {
     'S/S': 'Réseau',
     'N ALI': 'Réseau',
     
-    'AR PETROLE': 'Revendeur',
-    'BLACK OIL': 'Revendeur',
-    'CASALUB': 'Revendeur',
-    'DIMALUB': 'Revendeur',
-    'GALITRA': 'Revendeur',
-    'MADES': 'Revendeur',
-    'MFT': 'Revendeur',
-    'PETRONIC': 'Revendeur',
-    'REDAZI': 'Revendeur',
-    'SK POWER': 'Revendeur',
-    'STE CATER': 'Revendeur',
-    'STE DES CARB': 'Revendeur',
-    'ZAMAN': 'Revendeur'
+    'AR PETROLE': 'Industriel',
+    'BLACK OIL': 'Industriel',
+    'CASALUB': 'Industriel',
+    'DIMALUB': 'Industriel',
+    'GALITRA': 'Industriel',
+    'MADES': 'Industriel',
+    'MFT': 'Industriel',
+    'PETRONIC': 'Industriel',
+    'REDAZI': 'Industriel',
+    'SK POWER': 'Industriel',
+    'STE CATER': 'Industriel',
+    'STE DES CARB': 'Industriel',
+    'ZAMAN': 'Industriel'
 }
 
 def _assign_segment(client_name: str) -> str:
@@ -137,9 +137,19 @@ def _clean_numeric(val):
     val_str = str(val).strip()
     if val_str in ('', '-', '—', 'N/A', 'n/a', '#N/A', 'nan', 'None'):
         return np.nan
-    cleaned = val_str.replace(' ', '').replace(' ', '').replace(',', '.')
+        
+    val_str = val_str.replace(' ', '').replace(' ', '')
+    
+    if ',' in val_str and '.' in val_str:
+        if val_str.rfind(',') > val_str.rfind('.'):
+            val_str = val_str.replace('.', '').replace(',', '.')
+        else:
+            val_str = val_str.replace(',', '')
+    else:
+        val_str = val_str.replace(',', '.')
+        
     try:
-        return float(cleaned)
+        return float(val_str)
     except ValueError:
         return np.nan
 
@@ -150,10 +160,10 @@ def _robust_date_parser(val):
     if isinstance(val, (pd.Timestamp, datetime)):
         return val
     val_str = str(val).strip()
-    # Format utilisateur MM/DD/YYYY d'abord
-    d = pd.to_datetime(val_str, format='%m/%d/%Y', errors='coerce')
+    # Format standard DD/MM/YYYY en premier (pour le format SAP 05.01.2026 et autres)
+    d = pd.to_datetime(val_str, dayfirst=True, errors='coerce')
     if pd.isna(d):
-        d = pd.to_datetime(val_str, dayfirst=False, errors='coerce')
+        d = pd.to_datetime(val_str, format='%m/%d/%Y', errors='coerce')
     return d
 
 
@@ -169,6 +179,16 @@ def normalize_dataframe(df: pd.DataFrame, ai_column_map: dict = None, existing_c
     # 1. Normalisation des noms de colonnes (compresse \n et espaces multiples)
     df = df.copy()
     df.columns = [re.sub(r'\s+', ' ', str(c)).strip() for c in df.columns]
+
+    # 1.5 Prétraitement spécifique SAP (Article / Quantité d'ordre)
+    col_article = next((c for c in df.columns if 'article' in c.lower()), None)
+    col_qte = next((c for c in df.columns if 'quantit' in c.lower() and 'ordre' in c.lower()), None)
+    
+    if col_article and col_qte:
+        # Convertir en string robuste et gérer le NaN
+        article_series = df[col_article].astype(str).str.upper()
+        df['volume_gasoil_sap'] = np.where(article_series.str.contains('GASOIL'), df[col_qte], 0.0)
+        df['volume_super_sap'] = np.where(article_series.str.contains('SUPER'), df[col_qte], 0.0)
 
     # 2. Résolution des colonnes via alias
     mapping = _resolve_columns(df)
@@ -246,6 +266,10 @@ def normalize_dataframe(df: pd.DataFrame, ai_column_map: dict = None, existing_c
     out['statut'] = out['client'].apply(_assign_segment)
     mask_not_found = out['statut'] == 'NON RENSEIGNÉ'
     out.loc[mask_not_found, 'statut'] = file_statut[mask_not_found]
+    
+    # Mapper explicitement ZCB1/ZCB2 de SAP et supprimer REVENDEUR
+    out['statut'] = out['statut'].astype(str).str.upper()
+    out['statut'] = out['statut'].replace({'ZCB1': 'RÉSEAU', 'ZCB2': 'INDUSTRIEL', 'REVENDEUR': 'INDUSTRIEL'})
 
     # Canonicalisation des noms de fournisseurs (fusion des variantes connues)
     out['fournisseur'] = out['fournisseur'].apply(
