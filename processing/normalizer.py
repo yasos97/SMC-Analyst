@@ -249,9 +249,9 @@ def normalize_dataframe(df: pd.DataFrame, ai_column_map: dict = None, existing_c
         unique_clients = out['client'].unique()
         
         for c in unique_clients:
-            if c == 'INCONNU':
+            if c == 'INCONNU' or pd.isna(c):
                 continue
-            matches = get_close_matches(c, existing_upper, n=1, cutoff=0.85)
+            matches = get_close_matches(str(c), existing_upper, n=1, cutoff=0.85)
             if matches and matches[0] != c:
                 best_match = matches[0]
                 corrections[c] = best_match
