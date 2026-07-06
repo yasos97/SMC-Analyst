@@ -187,8 +187,10 @@ def normalize_dataframe(df: pd.DataFrame, ai_column_map: dict = None, existing_c
     if col_article and col_qte:
         # Convertir en string robuste et gérer le NaN
         article_series = df[col_article].astype(str).str.upper()
-        df['volume_gasoil_sap'] = np.where(article_series.str.contains('GASOIL'), df[col_qte], 0.0)
-        df['volume_super_sap'] = np.where(article_series.str.contains('SUPER'), df[col_qte], 0.0)
+        # Supprimer le point des milliers généré par SAP (ex: 34.000 -> 34000)
+        qte_series = df[col_qte].astype(str).str.replace('.', '', regex=False)
+        df['volume_gasoil_sap'] = np.where(article_series.str.contains('GASOIL'), qte_series, 0.0)
+        df['volume_super_sap'] = np.where(article_series.str.contains('SUPER'), qte_series, 0.0)
 
     # 2. Résolution des colonnes via alias
     mapping = _resolve_columns(df)
