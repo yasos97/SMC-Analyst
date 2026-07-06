@@ -549,6 +549,14 @@ def export_client_pdf():
         if df_filtered.empty:
             return "Aucune donnée pour ces filtres", 404
 
+        # Récupérer le paramètre 'compare'
+        compare_flag = request.args.get('compare', '1') == '1'
+
+        if not compare_flag and 'datetransaction' in df_filtered.columns:
+            years = sorted(df_filtered['datetransaction'].dt.year.dropna().unique(), reverse=True)
+            if years:
+                df_filtered = df_filtered[df_filtered['datetransaction'].dt.year == years[0]]
+
         # Préparer les KPIs pour le PDF
         dashboard_data = prepare_activite_data(df_filtered)
         kpis = dashboard_data['kpis']
@@ -561,8 +569,6 @@ def export_client_pdf():
         p_start = d_min.strftime('%d/%m/%Y') if pd.notnull(d_min) else 'N/A'
         p_end = d_max.strftime('%d/%m/%Y') if pd.notnull(d_max) else 'N/A'
         period_label = f"{p_start} au {p_end}"
-        # Récupérer le paramètre 'compare'
-        compare_flag = request.args.get('compare', '1') == '1'
         
         # Générer le PDF (binaire)
         print(f">>> [PDF] Début génération pour {len(df_filtered)} lignes, compare={compare_flag}", flush=True)
@@ -612,6 +618,13 @@ def export_excel():
         if df_filtered.empty:
             return "Aucune donnée pour ces filtres", 404
 
+        compare_flag = request.args.get('compare', '1') == '1'
+
+        if not compare_flag and 'datetransaction' in df_filtered.columns:
+            years = sorted(df_filtered['datetransaction'].dt.year.dropna().unique(), reverse=True)
+            if years:
+                df_filtered = df_filtered[df_filtered['datetransaction'].dt.year == years[0]]
+
         dashboard_data = prepare_activite_data(df_filtered)
         kpis = dashboard_data['kpis']
         
@@ -622,8 +635,6 @@ def export_excel():
         p_start = d_min.strftime('%d/%m/%Y') if pd.notnull(d_min) else 'N/A'
         p_end = d_max.strftime('%d/%m/%Y') if pd.notnull(d_max) else 'N/A'
         period_label = f"{p_start} au {p_end}"
-        
-        compare_flag = request.args.get('compare', '1') == '1'
         
         print(f">>> [EXCEL] Début génération pour {len(df_filtered)} lignes, compare={compare_flag}", flush=True)
         excel_content = generate_excel_report(kpis, df_filtered, client_label, period_label, compare=compare_flag)
