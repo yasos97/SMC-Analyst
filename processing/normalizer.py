@@ -278,6 +278,22 @@ def normalize_dataframe(df: pd.DataFrame, ai_column_map: dict = None, existing_c
         lambda v: SUPPLIER_CANONICAL.get(str(v).replace(' ', ''), v)
     )
 
+    # 4.5 Regroupement par transaction (fusion des lignes Gasoil et Super du même jour/client)
+    group_cols = ['datetransaction', 'client', 'statut', 'fournisseur']
+    agg_dict = {
+        'volume_gasoil': 'sum',
+        'volume_super': 'sum',
+        'ca_total': 'sum',
+        'ca': 'sum',
+        'marge_ht': 'sum',
+        'prix_achat_gasoil_ht': 'max',
+        'prix_achat_super_ht': 'max',
+        'prix_vente_gasoil_ttc': 'max',
+        'prix_vente_super_ttc': 'max'
+    }
+    agg_dict = {k: v for k, v in agg_dict.items() if k in out.columns}
+    out = out.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
+
     # 5. Calculs métier
     out['prix_vente_gasoil_ht'] = out['prix_vente_gasoil_ttc'] / 1.10
     out['prix_vente_super_ht'] = out['prix_vente_super_ttc'] / 1.10
